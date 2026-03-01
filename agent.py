@@ -4,14 +4,14 @@ from prompts import build_prompt
 
 
 def run():
-    print("\n🌿 Mindfulness Agent — type 'quit' to exit\n")
+    print("\nMindfulness Agent — type 'quit' to exit\n")
     memory = MemoryManager()
 
     while True:
         try:
             user_input = input("You: ").strip()
         except (EOFError, KeyboardInterrupt):
-            print("\nTake care. 🌿")
+            print("\nTake care.")
             break
 
         if not user_input:
