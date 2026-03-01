@@ -18,7 +18,7 @@ def run():
             continue
 
         if user_input.lower() in ("quit", "exit", "bye"):
-            print("Sage: Take care of yourself. See you next time. 🌿")
+            print("Sage: Take care of yourself. See you next time!.")
             break
 
         context = memory.before_response(user_input)
