@@ -6,7 +6,7 @@ from memory.facts import FactMemory
 from memory.compact_memory import CompactMemory
 from memory.router import route_memory
 from memory.reference_detector import detect_rereference
-from memory.extractor import extract_memory, update_summary, update_persona
+from memory.extractor import extract_memory, update_summary, update_persona, check_conflict
 
 
 class MemoryManager:
@@ -18,6 +18,8 @@ class MemoryManager:
         self.turn_count = 0
 
     def before_response(self, user_message: str) -> dict:
+        conflict_notes = []
+        extracted = extract_memory(user_message, "")
         is_reref, hint = detect_rereference(user_message)
         if is_reref and hint:
             self.episodic.boost_memory(hint, boost_amount=BOOST_AMOUNT)
@@ -37,6 +39,59 @@ class MemoryManager:
 
         if "compact" in layers:
             compact = self.compact.get()
+        if extracted["episode"]:
+            conflicting_ep = self.episodic.find_conflicting(extracted["episode"])
+            if conflicting_ep:
+                conflict_result = check_conflict(conflicting_ep["text"], extracted["episode"])
+                if conflict_result.get("conflict"):
+                    action = conflict_result.get("action")
+                    reason = conflict_result.get("reason", "")   
+                    print(f"  [episodic conflict — {action}: {reason}]")
+
+                    if action == "flag":
+                        # Store episode tagged as conflicting
+                        self.episodic.add(
+                            text=f"[CONFLICTING] {extracted['episode']} (conflicts with: {conflicting_ep['text']})",
+                            tags=extracted["episode_tags"] + ["conflict"],
+                            episode_id=str(uuid.uuid4())
+                        )
+                    elif action == "update":
+                        # Store as updated episode
+                        self.episodic.add(
+                            text=f"[UPDATED] {extracted['episode']}",
+                            tags=extracted["episode_tags"],
+                            episode_id=str(uuid.uuid4())
+                        )
+
+        for fact in extracted["facts"]:
+            # Check for conflict before storing
+            conflicting = self.facts.find_conflicting(fact["content"])
+            if conflicting:
+                conflict_result = check_conflict(conflicting["text"], fact["content"])
+                if conflict_result.get("conflict"):
+                    action = conflict_result.get("action")
+                    reason = conflict_result.get("reason", "")
+
+                    if action == "update":
+                        # Mark old fact as outdated, store new one
+                        print(f"  [conflict resolved — updated: {reason}]")
+                        self.facts.add(
+                content=fact["content"],
+                tags=fact.get("tags", []),
+                fact_type=fact.get("type", "semantic"),
+                time_span=fact.get("time_span", "ongoing")
+                        )
+                    elif action == "flag":
+                        # Store new fact but tag it as conflicting
+                        print(f"  [conflict flagged: {reason}]")
+                        self.facts.add(
+                    content=fact["content"],
+                    tags=fact.get("tags", []),
+                    fact_type=fact.get("type", "semantic"),
+                    time_span=fact.get("time_span", "ongoing")
+                        )
+
+                
 
         return {
             "stm": self.stm.get(),
@@ -45,7 +100,8 @@ class MemoryManager:
             "compact": compact,
             "layers_used": layers,
             "is_rereference": is_reref,
-            "rereference_hint": hint
+            "rereference_hint": hint,
+            "conflict_notes": conflict_notes
         }
 
     def after_response(self, user_msg: str, agent_reply: str):
@@ -72,6 +128,7 @@ class MemoryManager:
 
         if self.turn_count % SUMMARY_UPDATE_EVERY_N_TURNS == 0:
             self._refresh_compact()
+
 
     def _refresh_compact(self):
         recent_turns = self.stm.get()

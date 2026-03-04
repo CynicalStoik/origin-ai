@@ -67,6 +67,35 @@ Fields:
 Respond ONLY with valid JSON of the full updated persona, nothing else.
 """
 
+CONFLICT_CHECK_PROMPT = """You are a memory conflict detector for a mindfulness coaching agent.
+
+A user has just said something that may conflict with a previously stored fact.
+
+Existing fact: "{existing}"
+New statement: "{new}"
+
+Determine if these genuinely conflict with each other.
+A conflict means the new statement directly contradicts the existing fact.
+Similarity or related topics alone is NOT a conflict.
+
+Examples of real conflicts:
+- Existing: "User sleeps poorly and feels tired" / New: "User says they are sleeping well now"
+- Existing: "User exercises daily" / New: "User says they haven't exercised in weeks"
+
+Examples of NOT a conflict:
+- Existing: "User feels anxious at work" / New: "User feels anxious at home" (different context)
+- Existing: "User ate apple" / New: "User ate vadapav" (unrelated)
+
+If there is a conflict, decide what to do:
+- "update": new statement replaces the old one (user's situation has genuinely changed)
+- "flag": both may be true but worth noting the inconsistency to the user
+- "none": no real conflict
+
+Respond ONLY with valid JSON:
+{{"conflict": true, "action": "update", "reason": "User previously reported poor sleep but now claims to sleep well. Likely a change in situation or self-report inconsistency."}}
+or
+{{"conflict": false, "action": "none", "reason": ""}}
+"""
 
 def extract_memory(user_msg: str, agent_reply: str) -> dict:
     prompt = EXTRACTION_PROMPT.format(user_msg=user_msg, agent_reply=agent_reply)
@@ -93,6 +122,22 @@ def update_summary(previous_summary: str, recent_turns: list, n: int) -> str:
         n=n
     )
     return llm(prompt).strip()
+
+def check_conflict(existing_fact: str, new_statement: str) -> dict:
+    """
+    Check if a new statement conflicts with an existing stored fact.
+    Returns conflict info dict.
+    """
+    prompt = CONFLICT_CHECK_PROMPT.format(
+        existing=existing_fact,
+        new=new_statement
+    )
+    result = llm(prompt)
+    try:
+        clean = result.strip().replace("```json", "").replace("```", "").strip()
+        return json.loads(clean)
+    except Exception:
+        return {"conflict": False, "action": "none", "reason": ""}
 
 
 def update_persona(current_persona: dict, best_episode: dict | None, best_fact: dict | None) -> dict:

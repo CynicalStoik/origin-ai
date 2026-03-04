@@ -125,6 +125,34 @@ class FactMemory:
             current_boost = float(meta.get("boost", 0.0))
             meta["boost"] = round(current_boost + boost_amount, 4)
             self.collection.update(ids=[id_], metadatas=[meta])
+    def find_conflicting(self, new_content: str, threshold: float = 0.75) -> dict | None:
+        """
+        Find a fact that is semantically related but potentially contradictory.
+        Lower threshold than dedup (0.75 vs 0.92) — casts a wider net.
+        """
+        count = self.collection.count()
+        if count == 0:
+            return None
 
+        results = self.collection.query(
+            query_embeddings=[self.embed(new_content)],
+            n_results=3,
+            include=["documents", "metadatas", "distances"]
+        )
+
+        for doc, meta, dist in zip(
+            results["documents"][0],
+            results["metadatas"][0],
+            results["distances"][0]
+        ):
+            similarity = 1 - dist
+            if 0.75 <= similarity < 0.92:  # related but not duplicate
+                return {
+                    "text": doc,
+                    "metadata": meta,
+                    "similarity": round(similarity, 4)
+                }
+        return None
+    
     def count(self) -> int:
         return self.collection.count()
