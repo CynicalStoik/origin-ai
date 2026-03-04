@@ -1,0 +1,8 @@
+numpy
+pygame
+ollama
+chromadb
+edge-tts
+sounddevice
+faster-whisper
+sentence-transformers
