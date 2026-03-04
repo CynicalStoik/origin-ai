@@ -1,0 +1,24 @@
+import os
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
+
+WHISPER_MODEL_SIZE = "base.en"
+WHISPER_DEVICE = "cpu"
+WHISPER_COMPUTE_TYPE = "int8"
+TTS_VOICE = "en-US-AriaNeural"
+SAMPLE_RATE = 16000
+SILENCE_THRESHOLD = 0.02
+SILENCE_DURATION = 1.5  # seconds of silence to stop recording
+
+CHROMA_PERSIST_DIR = os.path.join(BASE_DIR, "data", "chroma_db")
+EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+STM_WINDOW_SIZE = 10  # number of recent turns to keep in short-term memory
+LPM_PATH = os.path.join(BASE_DIR, "data", "persona.json")
+
+DIVERGENCE_EPSILON = 0.15
+EMOTION_THRESHOLD = 0.6
+CONFIDENCE_DECAY_RATE = 0.05  # per-hour decay multiplier
