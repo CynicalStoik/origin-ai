@@ -94,7 +94,12 @@ def transcribe(audio: np.ndarray) -> str:
 
 
 async def _synthesise(text: str) -> bytes:
-    communicate = edge_tts.Communicate(text, config.TTS_VOICE)
+    communicate = edge_tts.Communicate(
+        text,
+        config.TTS_VOICE,
+        rate=config.TTS_RATE,
+        pitch=config.TTS_PITCH,
+    )
     buf = io.BytesIO()
     async for chunk in communicate.stream():
         if chunk["type"] == "audio":
@@ -107,6 +112,8 @@ def speak(text: str):
         return
     _init_pygame()
     mp3_bytes = asyncio.run(_synthesise(text))
+    if not mp3_bytes:
+        return
     buf = io.BytesIO(mp3_bytes)
     pygame.mixer.music.load(buf, "mp3")
     pygame.mixer.music.play()

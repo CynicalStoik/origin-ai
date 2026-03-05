@@ -15,7 +15,7 @@ fi
 
 # Python
 PYTHON=""
-for cmd in python3 python; do
+for cmd in python3.13 python; do
     if command -v "$cmd" &>/dev/null; then
         if "$cmd" -c 'import sys; assert sys.version_info >= (3,10)' 2>/dev/null; then
             PYTHON="$cmd"

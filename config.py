@@ -9,7 +9,9 @@ os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 WHISPER_MODEL_SIZE = "base.en"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
-TTS_VOICE = "en-US-AriaNeural"
+TTS_VOICE = "en-US-EmmaMultilingualNeural"
+TTS_RATE = "+10%"
+TTS_PITCH = "-3Hz"
 SAMPLE_RATE = 16000
 SILENCE_THRESHOLD = 0.02
 SILENCE_DURATION = 1.5  # seconds of silence to stop recording
