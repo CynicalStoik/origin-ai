@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import config
 import ollama
-from __future__ import annotations
 from memory.stm import ShortTermMemory
 from perception import perceive, PerceptionResult
 from memory import episodic, semantic, procedural, perspective, ltm

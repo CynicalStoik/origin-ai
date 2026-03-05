@@ -1,7 +1,8 @@
+from __future__ import annotations
+
 import os
 import json
 import config
-from __future__ import annotations
 
 _DEFAULT_PROFILE = {
     "name": None,

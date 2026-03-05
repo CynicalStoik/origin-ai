@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import os
 import config
 import chromadb
 from typing import Any
-from __future__ import annotations
 from chromadb.utils.embedding_functions import SentenceTransformerEmbeddingFunction
 
 _client: chromadb.ClientAPI | None = None

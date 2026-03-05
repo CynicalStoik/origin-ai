@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import config
 from dataclasses import dataclass
-from __future__ import annotations
 from perception import PerceptionResult
 from memory import perspective as psp_mem
 

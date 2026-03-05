@@ -1,5 +1,6 @@
-import config
 from __future__ import annotations
+
+import config
 from dataclasses import dataclass, field
 
 

@@ -1,6 +1,7 @@
+from __future__ import annotations
+
 import uuid
 from memory import store
-from __future__ import annotations
 from datetime import datetime, timezone
 
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import queue
 import config
@@ -7,7 +9,6 @@ import edge_tts
 import threading
 import numpy as np
 import sounddevice as sd
-from __future__ import annotations
 from faster_whisper import WhisperModel
 
 _whisper_model: WhisperModel | None = None

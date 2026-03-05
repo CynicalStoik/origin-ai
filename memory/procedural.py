@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import os
 import json
 import config
 from memory import store
-from __future__ import annotations
 
 TECHNIQUES_PATH = os.path.join(config.BASE_DIR, "data", "techniques.json")
 

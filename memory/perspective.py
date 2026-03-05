@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import math
 import uuid
 import config
 from memory import store
-from __future__ import annotations
 from datetime import datetime, timezone
 
 

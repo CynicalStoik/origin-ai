@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 import sys
 import uuid
 import signal
 import argparse
 from agent import Agent
-from __future__ import annotations
 from memory.procedural import load_techniques
 
 
