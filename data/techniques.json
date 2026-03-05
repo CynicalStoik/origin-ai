@@ -1,0 +1,152 @@
+[
+    {
+      "id": "box-breathing",
+      "name": "Box Breathing",
+      "description": "A calming technique using equal-length inhale, hold, exhale, and hold phases to activate the parasympathetic nervous system.",
+      "best_for": "stress anxiety calm focus",
+      "duration_minutes": 3,
+      "steps": [
+        "Find a comfortable seated position",
+        "Inhale slowly through your nose for 4 counts",
+        "Hold your breath for 4 counts",
+        "Exhale slowly through your mouth for 4 counts",
+        "Hold empty for 4 counts",
+        "Repeat for 3-5 minutes"
+      ]
+    },
+    {
+      "id": "body-scan",
+      "name": "Body Scan",
+      "description": "A progressive relaxation technique that draws awareness to each part of the body, releasing tension and building interoceptive awareness.",
+      "best_for": "tension sleep stress body-awareness",
+      "duration_minutes": 10,
+      "steps": [
+        "Lie down or sit comfortably and close your eyes",
+        "Bring attention to the top of your head",
+        "Slowly move awareness down through your face, neck, shoulders",
+        "Continue through arms, chest, abdomen, hips",
+        "Move through legs, knees, feet, toes",
+        "Notice any sensations without judging them",
+        "Breathe into areas of tension and release"
+      ]
+    },
+    {
+      "id": "five-senses-grounding",
+      "name": "5-4-3-2-1 Grounding",
+      "description": "A sensory grounding exercise that anchors awareness to the present moment through the five senses, useful for anxiety and overwhelm.",
+      "best_for": "anxiety overwhelm panic grounding present-moment",
+      "duration_minutes": 3,
+      "steps": [
+        "Name 5 things you can see around you",
+        "Name 4 things you can physically feel",
+        "Name 3 things you can hear",
+        "Name 2 things you can smell",
+        "Name 1 thing you can taste",
+        "Take a deep breath and notice how you feel"
+      ]
+    },
+    {
+      "id": "loving-kindness",
+      "name": "Loving-Kindness Meditation",
+      "description": "A compassion-focused meditation that cultivates warmth toward self and others through repeated phrases of well-wishing.",
+      "best_for": "self-criticism shame loneliness relationships compassion",
+      "duration_minutes": 10,
+      "steps": [
+        "Sit comfortably and close your eyes",
+        "Bring to mind someone you care about",
+        "Silently repeat: May you be happy, may you be healthy, may you be safe",
+        "Now direct those wishes toward yourself",
+        "Extend the wishes to a neutral person, then to someone difficult",
+        "Finally, extend to all beings everywhere"
+      ]
+    },
+    {
+      "id": "mindful-breathing",
+      "name": "Mindful Breathing",
+      "description": "The foundational mindfulness practice of observing the breath without trying to change it, building present-moment awareness.",
+      "best_for": "stress focus calm beginner mindfulness",
+      "duration_minutes": 5,
+      "steps": [
+        "Sit in a comfortable position with a straight spine",
+        "Close your eyes or soften your gaze",
+        "Bring attention to your natural breathing rhythm",
+        "Notice the sensation of air at your nostrils or chest rising",
+        "When your mind wanders, gently return attention to the breath",
+        "Continue for 5 minutes without judgement"
+      ]
+    },
+    {
+      "id": "progressive-muscle",
+      "name": "Progressive Muscle Relaxation",
+      "description": "Systematically tensing and releasing muscle groups to reduce physical tension and promote awareness of the stress-relaxation contrast.",
+      "best_for": "tension stress sleep physical-tension",
+      "duration_minutes": 10,
+      "steps": [
+        "Start with your feet: tense the muscles for 5 seconds",
+        "Release and notice the contrast for 10 seconds",
+        "Move to calves, then thighs, repeating tense-and-release",
+        "Continue through abdomen, chest, hands, arms, shoulders",
+        "Finish with face muscles: scrunch and release",
+        "Take a few deep breaths and notice your whole body"
+      ]
+    },
+    {
+      "id": "journaling-prompt",
+      "name": "Reflective Journaling",
+      "description": "Guided writing prompts that help externalize thoughts, identify patterns, and process emotions through structured self-reflection.",
+      "best_for": "confusion processing emotions academic-stress self-reflection",
+      "duration_minutes": 10,
+      "steps": [
+        "Find a quiet space with pen and paper or a device",
+        "Write freely for 2 minutes about how you feel right now",
+        "Re-read what you wrote and circle recurring themes",
+        "Write about one theme: what triggered it, how it affects you",
+        "End by writing one small thing you can do about it today"
+      ]
+    },
+    {
+      "id": "mindful-walking",
+      "name": "Mindful Walking",
+      "description": "A movement-based mindfulness practice that brings full attention to the sensations of walking, combining physical activity with present-moment awareness.",
+      "best_for": "restlessness energy movement stress outdoors",
+      "duration_minutes": 10,
+      "steps": [
+        "Choose a short path, indoors or outdoors",
+        "Begin walking at a slower pace than normal",
+        "Focus on the sensation of your feet contacting the ground",
+        "Notice the shift of weight from heel to toe",
+        "If your mind wanders, gently return focus to the walking",
+        "After 10 minutes, stand still and take three deep breaths"
+      ]
+    },
+    {
+      "id": "sleep-hygiene",
+      "name": "Sleep Wind-Down Routine",
+      "description": "A structured pre-sleep routine combining environmental cues and relaxation to improve sleep onset and quality.",
+      "best_for": "sleep insomnia screen-time routine",
+      "duration_minutes": 20,
+      "steps": [
+        "Set a consistent bedtime alarm 30 minutes before sleep",
+        "Put away screens and dim the lights",
+        "Do 5 minutes of gentle stretching",
+        "Practice box breathing or body scan for 5 minutes",
+        "Write down any lingering thoughts to externalize them",
+        "Lie down and focus on relaxing each body part"
+      ]
+    },
+    {
+      "id": "social-connection",
+      "name": "Mindful Social Connection",
+      "description": "An exercise focused on deepening presence during social interactions through active listening and intentional engagement.",
+      "best_for": "loneliness relationships social-anxiety isolation",
+      "duration_minutes": 15,
+      "steps": [
+        "Choose one conversation today to be fully present in",
+        "Put away your phone and face the person",
+        "Listen without planning your response",
+        "Notice their facial expressions and tone",
+        "Ask one genuine follow-up question",
+        "Afterwards, reflect on how being present felt"
+      ]
+    }
+  ]  
