@@ -4,10 +4,6 @@ import time
 import threading
 import config
 
-# Lazy imports — only pulled in when vision is actually started
-_cv2 = None
-_FER = None
-
 # Mapping from FER emotion labels to the agent's internal emotion vocabulary
 _LABEL_MAP: dict[str, str] = {
     "happy": "calm",
@@ -26,37 +22,42 @@ _latest_strength: float = 0.0
 _running = False
 _thread: threading.Thread | None = None
 
-
-def _load_deps() -> bool:
-    """Import heavy deps lazily so they don't slow down non-vision runs."""
-    global _cv2, _FER
-    try:
-        import cv2 as _cv2_mod
-        from fer import FER as _FER_cls
-        _cv2 = _cv2_mod
-        _FER = _FER_cls
-        return True
-    except ImportError as e:
-        print(f"[vision] Missing dependency: {e}. Run: pip install fer opencv-python-headless")
-        return False
+# Signalled once the camera is confirmed open (or failed)
+_started_event = threading.Event()
+_camera_ok = False
 
 
 def _detection_loop():
-    global _running, _latest_label, _latest_strength
+    global _running, _latest_label, _latest_strength, _camera_ok
 
-    if not _load_deps():
+    # --- Import deps inside the thread so startup is non-blocking ---
+    try:
+        import cv2
+        from fer import FER
+    except ImportError as e:
+        print(f"[vision] Missing dependency: {e}")
+        print("[vision] Install with: pip install fer opencv-python")
+        _camera_ok = False
+        _started_event.set()
         _running = False
         return
 
-    cap = _cv2.VideoCapture(config.VISION_CAMERA_INDEX)
+    cap = cv2.VideoCapture(config.VISION_CAMERA_INDEX)
     if not cap.isOpened():
-        print(f"[vision] Could not open camera index {config.VISION_CAMERA_INDEX}. Vision disabled.")
+        print(f"[vision] Could not open camera (index {config.VISION_CAMERA_INDEX}).")
+        print("[vision] Check that no other app is using the camera, then retry.")
+        _camera_ok = False
+        _started_event.set()
         _running = False
         return
 
-    detector = _FER(mtcnn=False)  # mtcnn=False uses Haar cascades — much faster on CPU
+    # Camera confirmed open — signal main thread before blocking in the loop
+    _camera_ok = True
+    _started_event.set()
+    print(f"[vision] Camera {config.VISION_CAMERA_INDEX} open. Facial emotion detection running.")
 
-    print("[vision] Camera active. Facial emotion detection running.")
+    # mtcnn=False → Haar cascade (fast on CPU, no extra model download needed)
+    detector = FER(mtcnn=False)
 
     while _running:
         ret, frame = cap.read()
@@ -85,16 +86,35 @@ def _detection_loop():
     print("[vision] Camera released.")
 
 
-def start():
-    """Launch the background detection thread. Safe to call multiple times."""
+def start() -> bool:
+    """
+    Launch the background detection thread and wait until the camera is
+    confirmed open (or failed).
+
+    Returns True if the camera started successfully, False otherwise.
+    Safe to call multiple times.
+    """
     global _running, _thread
 
     if _running:
-        return
+        return _camera_ok
 
+    _started_event.clear()
     _running = True
     _thread = threading.Thread(target=_detection_loop, daemon=True, name="vision-fer")
     _thread.start()
+
+    # Block until the camera is either open or has failed — max 10 s
+    # (FER + TensorFlow can take a few seconds to initialise)
+    print("[vision] Initialising camera …")
+    _started_event.wait(timeout=10.0)
+
+    if not _camera_ok:
+        _running = False
+        print("[vision] Disabled — running without facial emotion detection.")
+        return False
+
+    return True
 
 
 def stop():
@@ -113,18 +133,17 @@ def get_emotion() -> tuple[str, float] | None:
     Return the latest detected facial emotion as (label, strength).
 
     Returns None if:
-    - Vision was never started
-    - Camera could not be opened
-    - No face has been detected yet (strength == 0 and label == neutral default)
+    - Vision was never started or camera failed to open
+    - No face has been detected in the current frame
     """
-    if not _running and _thread is None:
+    if not _camera_ok:
         return None
 
     with _lock:
         label = _latest_label
         strength = _latest_strength
 
-    # Don't return a result until at least one real detection has occurred
+    # strength == 0.0 means no face detected yet
     if strength == 0.0:
         return None
 
