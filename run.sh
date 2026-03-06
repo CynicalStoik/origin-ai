@@ -4,12 +4,24 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 MODEL="${LLM_MODEL:-gemma3:4b}"
-MODE="${1:-text}"
+MODE="${1:-text}"   # text | speech
+VISION="${2:-}"     # vision (optional second arg)
 
 if [ "$MODE" != "text" ] && [ "$MODE" != "speech" ]; then
-    echo "Usage: ./run.sh [text|speech]"
+    echo "Usage: ./run.sh [text|speech] [vision]"
+    echo ""
+    echo "  Examples:"
+    echo "    ./run.sh text                  # text only"
+    echo "    ./run.sh speech                # speech (mic + TTS)"
+    echo "    ./run.sh speech vision         # speech + webcam emotion detection"
+    echo "    ./run.sh text vision           # text + webcam emotion detection"
     echo ""
     echo "  Swap model:  LLM_MODEL=llama3:8b ./run.sh text"
+    exit 1
+fi
+
+if [ -n "$VISION" ] && [ "$VISION" != "vision" ]; then
+    echo "Unknown second argument '$VISION'. Did you mean 'vision'?"
     exit 1
 fi
 
@@ -46,6 +58,13 @@ if [ "$MODE" = "speech" ]; then
     fi
 fi
 
+# OpenCV system deps (vision mode, Linux only)
+if [ "$VISION" = "vision" ]; then
+    if [[ "$(uname)" == "Linux" ]] && command -v apt-get &>/dev/null; then
+        dpkg -s libgl1 &>/dev/null 2>&1 || sudo apt-get install -y -qq libgl1
+    fi
+fi
+
 # Ollama
 if ! command -v ollama &>/dev/null; then
     echo "Installing Ollama..."
@@ -68,9 +87,12 @@ fi
 echo "Pulling model $MODEL..."
 ollama pull "$MODEL"
 
+# Build Python flags
+MODE_FLAG=""
+[ "$MODE" = "text" ] && MODE_FLAG="--text"
+
+VISION_FLAG=""
+[ "$VISION" = "vision" ] && VISION_FLAG="--vision"
+
 # Run
-if [ "$MODE" = "text" ]; then
-    exec env LLM_MODEL="$MODEL" python main.py --text
-else
-    exec env LLM_MODEL="$MODEL" python main.py
-fi
+exec env LLM_MODEL="$MODEL" python main.py $MODE_FLAG $VISION_FLAG
