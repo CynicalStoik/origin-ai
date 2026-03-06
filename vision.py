@@ -4,7 +4,7 @@ import time
 import threading
 import config
 
-# Mapping from FER emotion labels to the agent's internal emotion vocabulary
+# DeepFace emotion labels → agent's internal emotion vocabulary
 _LABEL_MAP: dict[str, str] = {
     "happy": "calm",
     "sad": "sad",
@@ -30,13 +30,13 @@ _camera_ok = False
 def _detection_loop():
     global _running, _latest_label, _latest_strength, _camera_ok
 
-    # --- Import deps inside the thread so startup is non-blocking ---
+    # Import inside thread — these are heavy and slow to load
     try:
         import cv2
-        from fer import FER
+        from deepface import DeepFace
     except ImportError as e:
         print(f"[vision] Missing dependency: {e}")
-        print("[vision] Install with: pip install fer opencv-python")
+        print("[vision] Install with: pip install deepface opencv-python")
         _camera_ok = False
         _started_event.set()
         _running = False
@@ -51,13 +51,9 @@ def _detection_loop():
         _running = False
         return
 
-    # Camera confirmed open — signal main thread before blocking in the loop
     _camera_ok = True
     _started_event.set()
     print(f"[vision] Camera {config.VISION_CAMERA_INDEX} open. Facial emotion detection running.")
-
-    # mtcnn=False → Haar cascade (fast on CPU, no extra model download needed)
-    detector = FER(mtcnn=False)
 
     while _running:
         ret, frame = cap.read()
@@ -66,17 +62,24 @@ def _detection_loop():
             continue
 
         try:
-            results = detector.detect_emotions(frame)
-            if results:
-                # Take the first (largest) detected face
-                emotions: dict[str, float] = results[0]["emotions"]
-                top_label = max(emotions, key=emotions.get)
-                top_strength = float(emotions[top_label])
-                mapped = _LABEL_MAP.get(top_label, "neutral")
+            # enforce_detection=False → no exception if no face in frame
+            result = DeepFace.analyze(
+                frame,
+                actions=["emotion"],
+                enforce_detection=False,
+                silent=True,
+            )
+            # result is a list; take the first (dominant) face
+            face = result[0] if isinstance(result, list) else result
+            emotions: dict[str, float] = face["emotion"]
+            dominant: str = face["dominant_emotion"]
+            strength = float(emotions.get(dominant, 0.0)) / 100.0  # DeepFace gives 0–100
+            mapped = _LABEL_MAP.get(dominant, "neutral")
 
-                with _lock:
-                    _latest_label = mapped
-                    _latest_strength = top_strength
+            with _lock:
+                _latest_label = mapped
+                _latest_strength = strength
+
         except Exception as e:
             print(f"[vision] Detection error: {e}")
 
@@ -88,10 +91,8 @@ def _detection_loop():
 
 def start() -> bool:
     """
-    Launch the background detection thread and wait until the camera is
-    confirmed open (or failed).
-
-    Returns True if the camera started successfully, False otherwise.
+    Launch the background detection thread and block until the camera is
+    confirmed open (or has failed). Returns True on success.
     Safe to call multiple times.
     """
     global _running, _thread
@@ -101,13 +102,12 @@ def start() -> bool:
 
     _started_event.clear()
     _running = True
-    _thread = threading.Thread(target=_detection_loop, daemon=True, name="vision-fer")
+    _thread = threading.Thread(target=_detection_loop, daemon=True, name="vision-deepface")
     _thread.start()
 
-    # Block until the camera is either open or has failed — max 10 s
-    # (FER + TensorFlow can take a few seconds to initialise)
     print("[vision] Initialising camera …")
-    _started_event.wait(timeout=10.0)
+    # Wait up to 15 s — DeepFace downloads its model weights on first run
+    _started_event.wait(timeout=15.0)
 
     if not _camera_ok:
         _running = False
@@ -131,10 +131,7 @@ def stop():
 def get_emotion() -> tuple[str, float] | None:
     """
     Return the latest detected facial emotion as (label, strength).
-
-    Returns None if:
-    - Vision was never started or camera failed to open
-    - No face has been detected in the current frame
+    Returns None if camera failed to open or no face detected yet.
     """
     if not _camera_ok:
         return None
@@ -143,7 +140,7 @@ def get_emotion() -> tuple[str, float] | None:
         label = _latest_label
         strength = _latest_strength
 
-    # strength == 0.0 means no face detected yet
+    # strength == 0.0 means no real detection has occurred yet
     if strength == 0.0:
         return None
 
