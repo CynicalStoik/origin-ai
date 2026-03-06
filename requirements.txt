@@ -9,4 +9,4 @@ sentence-transformers
 
 # Vision / facial emotion detection (only needed with --vision flag)
 fer
-opencv-python-headless
+opencv-python
