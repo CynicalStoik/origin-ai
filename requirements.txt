@@ -8,5 +8,5 @@ faster-whisper
 sentence-transformers
 
 # Vision / facial emotion detection (only needed with --vision flag)
-fer
+deepface
 opencv-python
