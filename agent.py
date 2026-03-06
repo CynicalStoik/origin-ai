@@ -34,8 +34,9 @@ professional support."""
 
 
 class Agent:
-    def __init__(self, session_id: str):
+    def __init__(self, session_id: str, vision_enabled: bool = False):
         self.session_id = session_id
+        self.vision_enabled = vision_enabled
         self.stm = ShortTermMemory()
         self.profile = ltm.load()
         self.profile["session_count"] = self.profile.get("session_count", 0) + 1
@@ -43,11 +44,17 @@ class Agent:
     def process_turn(self, user_text: str) -> str:
         """Full pipeline for one conversational turn. Returns agent response text."""
 
-        # 1. Perception
-        context = self.stm.format_for_prompt()
-        perc = perceive(user_text, context)
+        # 1. Optionally read the latest facial emotion from the vision module
+        visual_emotion = None
+        if self.vision_enabled:
+            import vision
+            visual_emotion = vision.get_emotion()
 
-        # 2. Divergence check (Algorithm 1) for each extracted claim
+        # 2. Perception (text + optional visual signal)
+        context = self.stm.format_for_prompt()
+        perc = perceive(user_text, context, visual_emotion=visual_emotion)
+
+        # 3. Divergence check (Algorithm 1) for each extracted claim
         for claim in perc.claims:
             if claim.proposition:
                 perspective.resolve_divergence(
@@ -58,17 +65,17 @@ class Agent:
                     topic=claim.topic,
                 )
 
-        # 3. Retrieve relevant memories
+        # 4. Retrieve relevant memories
         retrieved = self._retrieve_memories(user_text, perc)
 
-        # 4. Select dialogue strategy (Algorithm 2)
+        # 5. Select dialogue strategy (Algorithm 2)
         strat = select_strategy(perc)
 
-        # 5. Build prompt and call LLM
+        # 6. Build prompt and call LLM
         response = self._generate_response(user_text, perc, strat, retrieved)
 
-        # 6. Update memories
-        self._update_memories(user_text, response, perc)
+        # 7. Update memories
+        self._update_memories(user_text, response, perc, visual_emotion)
 
         return response
 
@@ -174,7 +181,16 @@ Move the conversation somewhere new."""
                 ]
             )
 
-    def _update_memories(self, user_text: str, response: str, perc: PerceptionResult):
+    def _update_memories(
+        self,
+        user_text: str,
+        response: str,
+        perc: PerceptionResult,
+        visual_emotion: tuple[str, float] | None = None,
+    ):
+        # Build episodic metadata — include visual emotion if available
+        visual_label = visual_emotion[0] if visual_emotion else None
+
         # Episodic: save both turns
         episodic.save_episode(
             content=user_text,
@@ -182,6 +198,7 @@ Move the conversation somewhere new."""
             role="student",
             emotion=perc.emotion.label,
             emotion_strength=perc.emotion.strength,
+            **({"visual_emotion": visual_label} if visual_label else {}),
         )
         episodic.save_episode(
             content=response,
