@@ -24,3 +24,7 @@ LPM_PATH = os.path.join(BASE_DIR, "data", "persona.json")
 DIVERGENCE_EPSILON = 0.15
 EMOTION_THRESHOLD = 0.6
 CONFIDENCE_DECAY_RATE = 0.05  # per-hour decay multiplier
+
+# Vision / facial emotion detection
+VISION_CAMERA_INDEX = int(os.environ.get("VISION_CAMERA", "0"))  # webcam device index
+VISION_FRAME_INTERVAL = 0.5  # seconds between FER inference calls (avoid CPU spike)
