@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import sys
 import uuid
 import signal
@@ -25,8 +24,7 @@ def main():
     vision_enabled = args.vision
 
     if not text_mode:
-        import speech  # only import (and load audio deps) when needed
-
+        import speech
     if vision_enabled:
         import vision
         vision.start()
@@ -39,6 +37,7 @@ def main():
         modalities.append("text")
     if vision_enabled:
         modalities.append("vision")
+
     mode_label = "Type your message." if text_mode else "Speak naturally."
     print("=" * 60)
     print("  ORIGON – Mindfulness Coaching Agent")
@@ -48,7 +47,6 @@ def main():
     print()
 
     load_techniques()
-
     agent = Agent(session_id=session_id, vision_enabled=vision_enabled)
 
     greeting = "Hey, good to see you. What's on your mind today?"
@@ -73,7 +71,12 @@ def main():
                 if not user_text:
                     continue
             else:
-                audio = speech.record_audio()
+                # Build STM context in the format speech.py expects
+                stm_context = [
+                    {"role": t.role, "content": t.content}
+                    for t in agent.stm.get_history()
+                ]
+                audio = speech.record_audio(context=stm_context)
                 if audio.size == 0:
                     continue
                 user_text = speech.transcribe(audio)
@@ -83,7 +86,6 @@ def main():
 
             response = agent.process_turn(user_text)
             print(f"Coach: {response}")
-
             if not text_mode:
                 speech.speak(response)
 

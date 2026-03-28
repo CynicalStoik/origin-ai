@@ -2,7 +2,7 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma2:9b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 
@@ -28,3 +28,11 @@ CONFIDENCE_DECAY_RATE = 0.05  # per-hour decay multiplier
 # Vision / facial emotion detection
 VISION_CAMERA_INDEX = int(os.environ.get("VISION_CAMERA", "0"))  # webcam device index
 VISION_FRAME_INTERVAL = 0.5  # seconds between FER inference calls (avoid CPU spike)
+
+# Turn Completion Projection 
+IPU_DURATION = 0.4
+TURN_RATIO_THRESHOLD = 0.6
+TURN_FALLBACK_THRESHOLD = 1.25
+MIN_SPEECH_DURATION = 1.5
+TURN_PROJECTION_N = 3
+TURN_PROJECTION_M = 3

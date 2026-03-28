@@ -9,28 +9,34 @@ from strategy import select_strategy, StrategyResult, SUGGEST_INTERVENTION
 
 
 SYSTEM_PROMPT = """\
-You are a thoughtful, grounded mindfulness coach talking with a university student. \
-Imagine you're a real person sitting across from them in a quiet room — not a chatbot.
+You are a warm, grounded mindfulness coach talking with a university student. \
+You are a real person — not a chatbot, not a therapist, not a question machine.
 
 How you speak:
-- Talk like a warm, perceptive human. Use natural phrasing, contractions, and the kind \
-of gentle language a trusted friend or mentor would use.
-- Keep it SHORT. 1-3 sentences usually. This is spoken conversation, not an essay.
+- Talk like a trusted friend who happens to know a lot about mindfulness. \
+Natural, warm, unhurried.
+- Keep it SHORT. 1-2 sentences most of the time. This is spoken conversation.
 - NEVER use bullet points, numbered lists, markdown, asterisks, or any formatting.
-- NEVER repeat a question you already asked. If you asked "how are you doing" once, \
-don't ask it again. Move the conversation forward.
-- NEVER start with "That's great to hear!" or similar filler. Jump into substance.
-- Mirror their energy. If they're brief, be brief. If they open up, engage more deeply.
-- Use their actual words when reflecting back — don't rephrase everything into \
-therapy-speak.
-- Sometimes a simple "mmm" or "yeah, that makes sense" is the right response. Not \
-every turn needs a question.
-- You're allowed to share a brief thought, observation, or gentle challenge. You're a \
-coach, not a question machine.
-- When suggesting techniques, weave them naturally into conversation — don't list steps.
+- NEVER ask a question if the student is wrapping up, saying goodbye, or giving \
+a one-word/short response. Just acknowledge and let it breathe.
+- NEVER ask more than one question per turn. Ever.
+- NEVER repeat a question you already asked. Move the conversation forward.
+- NEVER start with filler like "That's great!", "Absolutely!", "Of course!" — \
+jump straight into your response.
+- Match their energy exactly. If they say "bye" or "goodbye", say goodbye warmly \
+and leave it there. Don't probe. Don't ask why they're leaving.
+- If they say something brief or closed off, don't interrogate — reflect or \
+acknowledge simply.
+- Use their actual words when reflecting back. Don't rephrase into therapy-speak.
+- A simple "mmm", "yeah", or "take care" is sometimes the perfect response.
+- You're allowed to share a thought or gentle observation. You don't always \
+need to ask something.
+- When suggesting techniques, weave them naturally — don't list steps.
+- If someone is saying goodbye or ending the conversation, wish them well simply \
+and warmly. Do not ask them anything.
 
-You don't diagnose or treat conditions. If someone seems in crisis, warmly encourage \
-professional support."""
+You don't diagnose or treat conditions. If someone seems in crisis, warmly \
+encourage professional support."""
 
 
 class Agent:
@@ -83,13 +89,9 @@ class Agent:
         eps = episodic.recall(query, n=3)
         sems = semantic.recall(query, n=3)
 
-        procs = []
-        if any(True for _ in []):  # placeholder; populated via strategy
-            pass
         topics = [c.topic for c in perc.claims if c.topic]
         topic_q = " ".join(topics) if topics else query
         procs = procedural.recall(topic_q, n=2)
-
         divs = perspective.recall_active_divergences(topic_q, n=3)
 
         return {
@@ -98,6 +100,16 @@ class Agent:
             "procedural": procs,
             "divergences": divs,
         }
+
+    def _is_closing(self, user_text: str) -> bool:
+        """Detect if the user is ending the conversation."""
+        closing_signals = [
+            "bye", "goodbye", "good bye", "see you", "take care",
+            "i'm done", "that's all", "nothing else", "gotta go",
+            "i have to go", "talk later", "later", "cya", "farewell"
+        ]
+        lowered = user_text.lower().strip()
+        return any(signal in lowered for signal in closing_signals)
 
     def _generate_response(
         self,
@@ -138,6 +150,16 @@ class Agent:
         if strat.divergence_context:
             div_hint = f"\nRelevant tension: {strat.divergence_context}"
 
+        # Detect closing so we can give the LLM a strong hint
+        closing_hint = ""
+        if self._is_closing(user_text):
+            closing_hint = (
+                "\nIMPORTANT: The student is saying goodbye or ending the conversation. "
+                "Respond with a warm, brief farewell only. "
+                "Do NOT ask any questions. Do NOT probe why they are leaving. "
+                "Just wish them well in 1 sentence."
+            )
+
         user_prompt = f"""\
 What you know about this student:
 {profile_block}
@@ -147,15 +169,16 @@ What you remember:
 
 Their emotional state right now: {perc.emotion.label} (intensity {perc.emotion.strength:.1f}/1.0)
 
-Approach for this turn: {strat.instruction}{div_hint}
+Approach for this turn: {strat.instruction}{div_hint}{closing_hint}
 
 Conversation so far:
 {history_block}
 
 Student just said: "{user_text}"
 
-Respond naturally as the coach. Remember: short, warm, human. Don't repeat earlier questions. \
-Move the conversation somewhere new."""
+Respond naturally as the coach. Short, warm, human. \
+If they said something brief, match that energy — don't over-explain or over-question. \
+If they are saying goodbye, just say goodbye warmly."""
 
         try:
             resp = ollama.chat(
@@ -172,7 +195,6 @@ Move the conversation somewhere new."""
         except Exception as e:
             print(f"[agent] LLM error: {e}")
             import random
-
             return random.choice(
                 [
                     "Sorry, I lost my train of thought for a second. What were you saying?",
@@ -188,10 +210,8 @@ Move the conversation somewhere new."""
         perc: PerceptionResult,
         visual_emotion: tuple[str, float] | None = None,
     ):
-        # Build episodic metadata — include visual emotion if available
         visual_label = visual_emotion[0] if visual_emotion else None
 
-        # Episodic: save both turns
         episodic.save_episode(
             content=user_text,
             session_id=self.session_id,
@@ -206,7 +226,6 @@ Move the conversation somewhere new."""
             role="agent",
         )
 
-        # Semantic: store new claims as facts
         for claim in perc.claims:
             if claim.proposition and claim.confidence >= 0.6:
                 existing = semantic.recall(claim.proposition, n=1)
@@ -223,7 +242,6 @@ Move the conversation somewhere new."""
                         source=claim.holder,
                     )
 
-        # STM: add both turns
         self.stm.add("student", user_text)
         self.stm.add("agent", response)
 
@@ -265,7 +283,6 @@ Return JSON with these fields (keep existing values where nothing new was learne
                 format="json",
             )
             import json
-
             updates = json.loads(resp["message"]["content"].strip())
             for key in (
                 "name",

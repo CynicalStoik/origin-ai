@@ -38,12 +38,15 @@ done
 [ -z "$PYTHON" ] && echo "Python 3.10+ required." && exit 1
 
 # Venv
-if [ ! -d .venv ]; then
+if [[ ! -d .venv && ! -d venv ]]; then
     echo "Creating virtual environment..."
     "$PYTHON" -m venv .venv
 fi
-source .venv/bin/activate
-
+if [ -d .venv ]; then
+    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate
+elif [ -d venv ]; then
+    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate
+fi
 # Deps
 echo "Installing dependencies..."
 pip install -q --upgrade pip
