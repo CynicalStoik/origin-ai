@@ -35,9 +35,8 @@ def _init_pygame():
         _pygame_inited = True
 
 
-# ─────────────────────────────────────────
 # Turn-completion projection (Ekstedt & Skantze, 2021)
-# ─────────────────────────────────────────
+
 
 def _project_turn_completion(
     partial_transcript: str,
