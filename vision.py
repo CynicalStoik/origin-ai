@@ -57,6 +57,8 @@ def _detection_loop():
         f"[vision] Camera {config.VISION_CAMERA_INDEX} open. Facial emotion detection running."
     )
 
+    consecutive_errors = 0
+
     while _running:
         ret, frame = cap.read()
         if not ret:
@@ -64,28 +66,36 @@ def _detection_loop():
             continue
 
         try:
-            # enforce_detection=False → no exception if no face in frame
             result = DeepFace.analyze(
                 frame,
                 actions=["emotion"],
                 enforce_detection=False,
                 silent=True,
             )
-            # result is a list; take the first (dominant) face
             face = result[0] if isinstance(result, list) else result
             emotions: dict[str, float] = face["emotion"]
             dominant: str = face["dominant_emotion"]
             strength = (
                 float(emotions.get(dominant, 0.0)) / 100.0
-            )  # DeepFace gives 0–100
+            )
             mapped = _LABEL_MAP.get(dominant, "neutral")
 
             with _lock:
                 _latest_label = mapped
                 _latest_strength = strength
 
+            consecutive_errors = 0
+
         except Exception as e:
-            print(f"[vision] Detection error: {e}")
+            consecutive_errors += 1
+            if consecutive_errors <= 2:
+                print(f"[vision] Detection error: {e}")
+            if consecutive_errors == 3:
+                print("[vision] Repeated failures — silencing further errors. Vision may be degraded.")
+            if consecutive_errors >= 10:
+                print("[vision] Too many errors — disabling vision.")
+                _running = False
+                break
 
         time.sleep(config.VISION_FRAME_INTERVAL)
 

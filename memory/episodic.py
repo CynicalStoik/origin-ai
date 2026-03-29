@@ -11,20 +11,19 @@ def save_episode(
     role: str = "student",
     emotion: str = "neutral",
     emotion_strength: float = 0.0,
+    visual_emotion: str | None = None,
 ):
     doc_id = f"ep-{uuid.uuid4().hex[:12]}"
-    store.add(
-        "episodic",
-        doc_id=doc_id,
-        document=content,
-        metadata={
-            "session_id": session_id,
-            "role": role,
-            "emotion": emotion,
-            "emotion_strength": float(emotion_strength),
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        },
-    )
+    meta = {
+        "session_id": session_id,
+        "role": role,
+        "emotion": emotion,
+        "emotion_strength": float(emotion_strength),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if visual_emotion:
+        meta["visual_emotion"] = visual_emotion
+    store.add("episodic", doc_id=doc_id, document=content, metadata=meta)
     return doc_id
 
 

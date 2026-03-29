@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 import config
 from dataclasses import dataclass
 from perception import PerceptionResult
@@ -10,33 +11,39 @@ SUGGEST_INTERVENTION = "suggest_intervention"
 ELICIT_CLARIFICATION = "elicit_clarification"
 REFLECT_AND_VALIDATE = "reflect_and_validate"
 MATCH_AND_CONTINUE = "match_and_continue"
+ACKNOWLEDGE = "acknowledge"
+SMALL_TALK = "small_talk"
 
 STRATEGY_INSTRUCTIONS = {
     GROUND_ON_DIVERGENCE: (
-        "You've noticed something they said now doesn't quite line up with "
-        "something from before. Gently bring that up — not as a gotcha, but "
-        "like 'hm, I remember you mentioned X, and now it sounds like Y — "
-        "what shifted?' Let them sit with it."
+        "Something they said doesn't match what they said before. "
+        "Name it directly but kindly. 'Last time you said X, now it sounds different.' "
+        "Don't dance around it."
     ),
     SUGGEST_INTERVENTION: (
-        "The moment feels right to offer something practical. Suggest a "
-        "technique naturally, like you're sharing something that helped "
-        "someone you know. Keep it casual, not prescriptive."
+        "Share something practical like it helped you or someone you know. "
+        "Not a prescription. One sentence."
     ),
     ELICIT_CLARIFICATION: (
-        "Something feels unclear or half-said. Draw it out gently — not "
-        "with a therapist question, but with genuine curiosity. Like, "
-        "'say more about that' or 'what do you mean when you say...'"
+        "Something felt half-said. Ask the specific thing you want to know. "
+        "Not 'tell me more' — ask what you actually want to understand."
     ),
     REFLECT_AND_VALIDATE: (
-        "They're feeling something strong right now. Don't try to fix it. "
-        "Just be with them. Acknowledge what they're going through in a way "
-        "that shows you actually heard them. A short, warm response."
+        "They're feeling something real. Don't fix it. Don't minimize it. "
+        "Name what you see. Maybe one short sentence."
     ),
     MATCH_AND_CONTINUE: (
-        "Things are flowing naturally. Keep the conversation going — share "
-        "a thought, make an observation, or gently explore what they said. "
-        "Don't force a question if a simple acknowledgment fits better."
+        "Conversation is flowing. React to what they actually said. "
+        "Make a statement or ask one specific thing. Don't wander."
+    ),
+    ACKNOWLEDGE: (
+        "They gave you something brief. Match their energy. "
+        "A word, a short reaction. Don't push. Don't ask a random question."
+    ),
+    SMALL_TALK: (
+        "Nothing heavy is on the table. Connect to something you know about them — "
+        "their classes, something they mentioned before. If you don't know anything, "
+        "one genuine question about their life. Don't force it."
     ),
 }
 
@@ -48,43 +55,36 @@ class StrategyResult:
     divergence_context: str = ""
 
 
-def select_strategy(perception: PerceptionResult) -> StrategyResult:
+def select_strategy(
+    perception: PerceptionResult,
+    turn_count: int = 0,
+) -> StrategyResult:
     topics = [c.topic for c in perception.claims if c.topic]
     query_topic = " ".join(topics) if topics else ""
 
-    divergences: list[dict] = []
-    if query_topic:
-        divergences = psp_mem.recall_active_divergences(query_topic, n=5)
+    if perception.emotion.strength > 0.75:
+        return StrategyResult(
+            name=REFLECT_AND_VALIDATE,
+            instruction=STRATEGY_INSTRUCTIONS[REFLECT_AND_VALIDATE],
+        )
 
-    high_conf_divs = [
+    divergences: list[dict] = []
+    if query_topic and turn_count >= config.GROUNDING_MIN_TURNS:
+        divergences = psp_mem.recall_active_divergences(query_topic, n=3)
+
+    contested = [
         d
         for d in divergences
-        if d["metadata"].get("confidence", 0) > config.DIVERGENCE_EPSILON
+        if d["metadata"].get("negotiation_status") == "contested"
+        and d["metadata"].get("confidence", 0) > config.DIVERGENCE_EPSILON
     ]
 
-    if high_conf_divs:
-        top = high_conf_divs[0]
-        status = top["metadata"].get("negotiation_status", "open")
-        div_ctx = top["document"]
-
-        if status == "contested":
-            return StrategyResult(
-                name=GROUND_ON_DIVERGENCE,
-                instruction=STRATEGY_INSTRUCTIONS[GROUND_ON_DIVERGENCE],
-                divergence_context=div_ctx,
-            )
-        elif status == "resolved":
-            return StrategyResult(
-                name=SUGGEST_INTERVENTION,
-                instruction=STRATEGY_INSTRUCTIONS[SUGGEST_INTERVENTION],
-                divergence_context=div_ctx,
-            )
-        else:  # open
-            return StrategyResult(
-                name=ELICIT_CLARIFICATION,
-                instruction=STRATEGY_INSTRUCTIONS[ELICIT_CLARIFICATION],
-                divergence_context=div_ctx,
-            )
+    if contested and random.random() < config.GROUNDING_PROBABILITY:
+        return StrategyResult(
+            name=GROUND_ON_DIVERGENCE,
+            instruction=STRATEGY_INSTRUCTIONS[GROUND_ON_DIVERGENCE],
+            divergence_context=contested[0]["document"],
+        )
 
     if perception.emotion.strength > config.EMOTION_THRESHOLD:
         return StrategyResult(
@@ -92,13 +92,50 @@ def select_strategy(perception: PerceptionResult) -> StrategyResult:
             instruction=STRATEGY_INSTRUCTIONS[REFLECT_AND_VALIDATE],
         )
 
+    has_substance = any(
+        c.topic and c.topic != "wellbeing" for c in perception.claims
+    )
+
+    if not has_substance and perception.emotion.strength < 0.3:
+        return StrategyResult(
+            name=SMALL_TALK,
+            instruction=STRATEGY_INSTRUCTIONS[SMALL_TALK],
+        )
+
+    if not perception.claims:
+        return StrategyResult(
+            name=ACKNOWLEDGE,
+            instruction=STRATEGY_INSTRUCTIONS[ACKNOWLEDGE],
+        )
+
+    open_divs = [
+        d
+        for d in divergences
+        if d["metadata"].get("negotiation_status") == "open"
+    ]
+    if open_divs and turn_count >= config.GROUNDING_MIN_TURNS and random.random() < 0.4:
+        return StrategyResult(
+            name=GROUND_ON_DIVERGENCE,
+            instruction=STRATEGY_INSTRUCTIONS[GROUND_ON_DIVERGENCE],
+            divergence_context=open_divs[0]["document"],
+        )
+
     if perception.is_continuation:
+        if (
+            turn_count >= 5
+            and perception.emotion.strength > 0.3
+            and random.random() < 0.2
+        ):
+            return StrategyResult(
+                name=SUGGEST_INTERVENTION,
+                instruction=STRATEGY_INSTRUCTIONS[SUGGEST_INTERVENTION],
+            )
         return StrategyResult(
             name=MATCH_AND_CONTINUE,
             instruction=STRATEGY_INSTRUCTIONS[MATCH_AND_CONTINUE],
         )
 
     return StrategyResult(
-        name=ELICIT_CLARIFICATION,
-        instruction=STRATEGY_INSTRUCTIONS[ELICIT_CLARIFICATION],
+        name=MATCH_AND_CONTINUE,
+        instruction=STRATEGY_INSTRUCTIONS[MATCH_AND_CONTINUE],
     )

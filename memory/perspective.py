@@ -99,10 +99,15 @@ def resolve_divergence(
 
         now = datetime.now(timezone.utc).isoformat()
         div_id = f"psp-{uuid.uuid4().hex[:12]}"
+        old_stance = "true" if old_truth else "not true"
+        new_stance = "true" if new_truth_value else "not true"
         store.add(
             "perspective",
             doc_id=div_id,
-            document=f"DIVERGENCE: '{entry['document']}' vs '{new_proposition}'",
+            document=(
+                f"Student's view shifted on '{entry['document']}': "
+                f"was {old_stance}, now {new_stance}"
+            ),
             metadata={
                 "holder": new_holder,
                 "truth_value": str(new_truth_value),
@@ -131,8 +136,10 @@ def resolve_divergence(
 
 
 def _topics_overlap(a: str, b: str) -> bool:
+    if not a and not b:
+        return True
     if not a or not b:
-        return True  # if either is empty, assume potential overlap
+        return False
     a_words = set(a.lower().split())
     b_words = set(b.lower().split())
     return bool(a_words & b_words)

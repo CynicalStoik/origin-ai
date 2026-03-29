@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import sys
 import uuid
 import signal
@@ -49,7 +50,7 @@ def main():
     load_techniques()
     agent = Agent(session_id=session_id, vision_enabled=vision_enabled)
 
-    greeting = "Hey, good to see you. What's on your mind today?"
+    greeting = agent.generate_greeting()
     print(f"Coach: {greeting}")
     if not text_mode:
         speech.speak(greeting)
@@ -71,7 +72,6 @@ def main():
                 if not user_text:
                     continue
             else:
-                # Build STM context in the format speech.py expects
                 stm_context = [
                     {"role": t.role, "content": t.content}
                     for t in agent.stm.get_history()

@@ -43,7 +43,7 @@ if [[ ! -d .venv && ! -d venv ]]; then
     "$PYTHON" -m venv .venv
 fi
 if [ -d .venv ]; then
-    source venv/bin/activate 2>/dev/null || source venv/Scripts/activate
+    source .venv/bin/activate 2>/dev/null || source .venv/Scripts/activate
 elif [ -d venv ]; then
     source venv/bin/activate 2>/dev/null || source venv/Scripts/activate
 fi

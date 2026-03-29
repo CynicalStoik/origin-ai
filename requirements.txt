@@ -10,3 +10,4 @@ sentence-transformers
 # Vision / facial emotion detection (only needed with --vision flag)
 deepface
 opencv-python
+tf-keras

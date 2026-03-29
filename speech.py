@@ -1,19 +1,20 @@
 from __future__ import annotations
+
 import io
 import queue
 import config
 import pygame
-import ollama
 import asyncio
 import edge_tts
 import threading
 import numpy as np
 import sounddevice as sd
 from faster_whisper import WhisperModel
-from concurrent.futures import ThreadPoolExecutor
 
 _whisper_model: WhisperModel | None = None
 _pygame_inited = False
+_tts_loop: asyncio.AbstractEventLoop | None = None
+_tts_thread: threading.Thread | None = None
 
 
 def _get_whisper_model() -> WhisperModel:
@@ -35,20 +36,61 @@ def _init_pygame():
         _pygame_inited = True
 
 
-# Turn-completion projection (Ekstedt & Skantze, 2021)
+def _get_tts_loop() -> asyncio.AbstractEventLoop:
+    """Persistent event loop for TTS — avoids asyncio.run() overhead per call."""
+    global _tts_loop, _tts_thread
+    if _tts_loop is None:
+        _tts_loop = asyncio.new_event_loop()
+        _tts_thread = threading.Thread(
+            target=_tts_loop.run_forever, daemon=True, name="tts-loop"
+        )
+        _tts_thread.start()
+    return _tts_loop
 
+
+def _is_turn_complete(transcript: str) -> bool:
+    """Heuristic turn-completion using Whisper's punctuation and common patterns."""
+    t = transcript.strip()
+    if not t:
+        return False
+
+    if t[-1] in ".?!":
+        return True
+
+    words = t.lower().split()
+    if not words:
+        return False
+
+    last = words[-1].rstrip(".,!? ")
+    one_word = {
+        "bye", "goodbye", "thanks", "okay", "alright", "yeah", "yep",
+        "nope", "no", "yes", "sure", "right", "later", "hmm", "hm", "mhm",
+    }
+    if last in one_word:
+        return True
+
+    if len(words) >= 2:
+        tail = " ".join(words[-2:]).rstrip(".,!? ")
+        two_word = {
+            "thank you", "i guess", "take care", "see you",
+            "not really", "that's it", "think so",
+        }
+        if tail in two_word:
+            return True
+
+    return False
+
+
+# LLM-based turn projection (Ekstedt & Skantze, 2021) — opt-in via config
 
 def _project_turn_completion(
     partial_transcript: str,
     context: list[dict],
 ) -> float:
-    """
-    Generate N continuations in parallel and return the ratio
-    that signal turn-completion. No transcript punctuation check —
-    only LLM continuations decide.
-    """
     if not partial_transcript.strip():
         return 0.0
+
+    import ollama
 
     n = getattr(config, "TURN_PROJECTION_N", 3)
     m = getattr(config, "TURN_PROJECTION_M", 3)
@@ -74,11 +116,7 @@ def _project_turn_completion(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": context_str},
                 ],
-                options={
-                    "temperature": 1.0,
-                    "top_k": 5,
-                    "num_predict": m,
-                },
+                options={"temperature": 1.0, "top_k": 5, "num_predict": m},
             )
             continuation = response["message"]["content"].strip()
             return (
@@ -90,6 +128,7 @@ def _project_turn_completion(
         except Exception:
             return False
 
+    from concurrent.futures import ThreadPoolExecutor
     with ThreadPoolExecutor(max_workers=n) as executor:
         results = list(executor.map(single_completion, range(n)))
 
@@ -97,22 +136,12 @@ def _project_turn_completion(
 
 
 def record_audio(context: list[dict] | None = None) -> np.ndarray:
-    """
-    Record audio using projection-based turn completion (Ekstedt & Skantze, 2021).
-
-    Strategy:
-    - Listen in 100ms blocks
-    - After each IPU_DURATION silence, transcribe what we have so far
-    - Only project if user has spoken for at least MIN_SPEECH_DURATION seconds
-    - Reuse last transcript if no new audio frames since last projection
-    - Project N continuations in parallel — if ratio >= TURN_RATIO_THRESHOLD, turn complete
-    - Fallback: if total silence exceeds TURN_FALLBACK_THRESHOLD, always end turn
-    """
+    """Record with silence detection + Whisper heuristic turn completion."""
     sr = config.SAMPLE_RATE
+    silence_dur = config.SILENCE_DURATION
     ipu_dur = getattr(config, "IPU_DURATION", 0.4)
-    ratio_threshold = getattr(config, "TURN_RATIO_THRESHOLD", 0.6)
-    fallback_threshold = getattr(config, "TURN_FALLBACK_THRESHOLD", 1.25)
-    min_speech_duration = getattr(config, "MIN_SPEECH_DURATION", 1.5)
+    min_speech = getattr(config, "MIN_SPEECH_DURATION", 1.0)
+    use_llm = getattr(config, "USE_LLM_PROJECTION", False)
     block_dur = 0.1
     block_size = int(sr * block_dur)
 
@@ -127,13 +156,11 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
 
     frames: list[np.ndarray] = []
     speech_started = False
-    ipu_silent_time = 0.0
-    total_silent_time = 0.0
+    silent_time = 0.0
     speech_duration = 0.0
-    last_transcript = ""
-    last_frames_count = 0
+    checked_this_silence = False
 
-    print("[speech] Listening … (speak naturally)")
+    print("[speech] Listening …")
 
     with sd.InputStream(
         samplerate=sr,
@@ -153,8 +180,8 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
 
             if not is_silent:
                 speech_started = True
-                ipu_silent_time = 0.0
-                total_silent_time = 0.0
+                silent_time = 0.0
+                checked_this_silence = False
 
             if speech_started:
                 frames.append(block)
@@ -163,40 +190,40 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                     speech_duration += block_dur
 
                 if is_silent:
-                    ipu_silent_time += block_dur
-                    total_silent_time += block_dur
+                    silent_time += block_dur
 
-                    # Fallback: max silence exceeded → always end turn
-                    if total_silent_time >= fallback_threshold:
-                        print("[speech] Fallback threshold reached — ending turn")
+                    # hard cutoff
+                    if silent_time >= silence_dur:
                         recording_done.set()
                         break
 
-                    # IPU triggered → maybe run projection
-                    if ipu_silent_time >= ipu_dur:
-                        ipu_silent_time = 0.0
+                    # heuristic check at IPU boundary
+                    if (
+                        not checked_this_silence
+                        and silent_time >= ipu_dur
+                        and speech_duration >= 0.3
+                    ):
+                        checked_this_silence = True
+                        partial_audio = np.concatenate(frames, axis=0).flatten()
+                        partial_text = transcribe(partial_audio)
 
-                        # Skip if user hasn't spoken long enough
-                        if speech_duration < min_speech_duration:
-                            print(f"[speech] Skipping projection — speech too short ({speech_duration:.1f}s)")
-                            continue
+                        if partial_text and _is_turn_complete(partial_text):
+                            print(f"[speech] Turn complete: '{partial_text}'")
+                            recording_done.set()
+                            break
 
-                        # Reuse last transcript if no new frames since last check
-                        if len(frames) > last_frames_count:
-                            partial_audio = np.concatenate(frames, axis=0).flatten()
-                            partial_text = transcribe(partial_audio)
-                            last_transcript = partial_text
-                            last_frames_count = len(frames)
-                        else:
-                            partial_text = last_transcript
-
-                        if partial_text:
-                            print(f"[speech] Projecting on: '{partial_text}'")
+                        # optional LLM projection for longer speech
+                        if (
+                            use_llm
+                            and partial_text
+                            and speech_duration >= min_speech
+                        ):
+                            ratio_threshold = getattr(
+                                config, "TURN_RATIO_THRESHOLD", 0.6
+                            )
                             ratio = _project_turn_completion(partial_text, context)
-                            print(f"[speech] Ratio: {ratio:.2f} (threshold: {ratio_threshold})")
-
                             if ratio >= ratio_threshold:
-                                print("[speech] Turn complete (projection)")
+                                print("[speech] Turn complete (LLM projection)")
                                 recording_done.set()
                                 break
 
@@ -232,11 +259,13 @@ def speak(text: str):
     if not text:
         return
     _init_pygame()
-    mp3_bytes = asyncio.run(_synthesise(text))
+    loop = _get_tts_loop()
+    future = asyncio.run_coroutine_threadsafe(_synthesise(text), loop)
+    mp3_bytes = future.result(timeout=15)
     if not mp3_bytes:
         return
     buf = io.BytesIO(mp3_bytes)
     pygame.mixer.music.load(buf, "mp3")
     pygame.mixer.music.play()
     while pygame.mixer.music.get_busy():
-        pygame.time.wait(100)
+        pygame.time.wait(50)
