@@ -53,37 +53,36 @@ _GREETINGS_EVENING = [
 ]
 
 # ---------------------------------------------------------------------------
-# System prompt — kept short so Gemma2:9b actually follows all of it
+# System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """\
-You are a mindfulness coach at a university wellness center. You talk like a real person, \
-not a therapist. Casual, warm, direct. You're sitting across from someone, not writing to them.
+SYSTEM_PROMPT = """You are a mindfulness coach. Talk like a real person — calm, warm, direct.
 
-Rules you never break:
-- One sentence. Maximum two. Never more.
-- Sound like a person, not a book. No poetry. No metaphors.
-- If they say they're fine or good, believe them. Don't probe it.
-- If they say they don't want to talk about something, drop it and go sideways.
-- Never repeat or paraphrase what they said.
-- No filler: no "I hear you", no "That makes sense", no "It sounds like".
-- Never invent details they haven't mentioned.
-- Ask one thing at a time. Specific, not open-ended.
-- When something is heavy, don't make it heavier. Stay calm and small.
-- When they seem stuck, offer something practical — not as a prescription, as an option.
+HARD RULES:
+1. One or two sentences max. Never more.
+2. If they say good/fine/okay/nothing much, believe them. Move on with a light question.
+3. NEVER suggest they are hiding something or holding back. If they say nothing is wrong, accept it.
+4. NEVER ask about a feeling they didn't mention or just denied having.
+5. NEVER invent topics, courses, midterms, or any detail they didn't say.
+6. No filler. No "I hear you." No metaphors. No poetry.
+7. If they deny something, drop it immediately. Don't push.
+8. If they're confused by something you said, admit it simply and redirect.
+9. If they seem unsure what to talk about, briefly introduce yourself as a mindfulness coach.
+10. When someone shares a problem like stress or assignments, offer a CONCRETE suggestion — don't just reflect it back.
 
-Examples — match this register exactly:
-"I've been good." → "Okay. What's been taking up most of your time?"
-"I've been good, I've been good." → "What's been going on?"
-"I don't want to talk about it." → "That's fine. What else is on your mind?"
-"Nothing much." → "Nothing much, or nothing you feel like getting into?"
-"I'm fine." → "Fine like actually okay, or fine like you've stopped checking?"
-"Just tired." → "Body tired or everything tired?"
-"Everything feels off." → "When did that start?"
-"I can't focus." → "What happens when you try?"
-"I tried the breathing thing, it didn't help." → "What happened when you tried it?"
-"Yeah, good, good." → "Okay. Anything else going on?"
+EXACTLY how to respond in these situations:
+"Hello." → "Hey, how are you doing?"
+"Nothing much, I've been doing good." → "Good to hear — anything been on your mind lately?"
+"Nothing much. I don't have anything specific on my mind." → "That's fine — how's everything been going for you generally?"
+"I just have some assignments right now." → "One thing that helps is writing them all out and picking just one to start — takes the edge off the pile."
+"There is a lot of work to do." → "When there's a lot on your plate, breaking it into smaller pieces helps — what's the most pressing thing right now?"
+"Yes, kinda." → "What's been the hardest part to manage?"
+"I'm stressed." → "What's been driving most of it?"
+"I feel overwhelmed." → "That makes sense. One thing that helps is getting everything out of your head and onto paper — have you tried that?"
 "I don't know." → "What would you say if you did know?"
+"I'm fine." → "Glad to hear it. Anything you want to talk through?"
+"I don't want to talk about it." → "That's fine. Anything else on your mind?"
+"Anything I need to talk about?" → "I'm a mindfulness coach here to support you — whatever's on your mind works, whether that's stress, how you're feeling, or just how your day went."
 "Bye." → "Take care of yourself."
 """
 
@@ -104,10 +103,9 @@ _EMOTION_VALENCE: dict[str, float] = {
 
 
 def _conflict_score(visual_label: str, speech_label: str) -> float:
-    """Return 0.0 (no conflict) → 1.0 (strong conflict) based on valence distance."""
     v = _EMOTION_VALENCE.get(visual_label.lower(), 0.0)
     s = _EMOTION_VALENCE.get(speech_label.lower(), 0.0)
-    return abs(v - s) / 2.0  # normalised to [0, 1]
+    return abs(v - s) / 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +136,13 @@ _FILLER_STARTS = re.compile(
 
 _COACH_PREFIX = re.compile(r"^(coach|me|mindfulness coach)\s*:\s*", re.IGNORECASE)
 
+_PROJECTION_PATTERNS = re.compile(
+    r"(holding (something )?back|something you'?re not saying|seems like there'?s more"
+    r"|hiding something|not being (fully )?honest|reluctant to (share|open up)"
+    r"|i sense|i feel like you|you seem to be struggling to)",
+    re.IGNORECASE,
+)
+
 
 def _clean_response(text: str) -> str:
     text = text.replace("*", "").replace("#", "")
@@ -152,6 +157,10 @@ def _clean_response(text: str) -> str:
     return text
 
 
+def _is_projecting(text: str) -> bool:
+    return bool(_PROJECTION_PATTERNS.search(text))
+
+
 # ---------------------------------------------------------------------------
 # Agent
 # ---------------------------------------------------------------------------
@@ -164,7 +173,6 @@ class Agent:
         self.profile = ltm.load()
         self.profile["session_count"] = self.profile.get("session_count", 0) + 1
         self.turn_count = 0
-        # Throttle: track the last turn we named a vision/speech conflict
         self.conflict_named_at_turn: int | None = None
 
     # ------------------------------------------------------------------
@@ -227,8 +235,16 @@ class Agent:
         strat = select_strategy(perc, turn_count=self.turn_count)
         retrieved = self._retrieve_memories(user_text, perc, strat)
         response = self._generate_response(user_text, perc, strat, retrieved, visual_emotion)
-        self._update_memories(user_text, response, perc, visual_emotion)
 
+        # Safety net: catch projection language and replace with neutral fallback
+        if _is_projecting(response):
+            response = random.choice([
+                "That's fine — how's everything been going for you generally?",
+                "No worries. Anything on your mind at all?",
+                "Fair enough. What's been going on lately?",
+            ])
+
+        self._update_memories(user_text, response, perc, visual_emotion)
         return response
 
     # ------------------------------------------------------------------
@@ -245,11 +261,10 @@ class Agent:
         eps = episodic.recall(query, n=3) if is_return else []
         sems = semantic.recall(query, n=3) if is_return else []
 
-        procs = (
-            procedural.recall(topic_q, n=2)
-            if strat.name == SUGGEST_INTERVENTION
-            else []
-        )
+        # Always try to pull procedural memory when there's an actionable topic,
+        # not just when the strategy is SUGGEST_INTERVENTION
+        procs = procedural.recall(topic_q, n=2) if topic_q else []
+
         divs = (
             perspective.recall_active_divergences(topic_q, n=3)
             if config.PAM_ENABLED and strat.name == GROUND_ON_DIVERGENCE
@@ -282,32 +297,39 @@ class Agent:
         signals = ["what do you mean", "i don't understand", "not sure what you mean", "confused"]
         return lowered in exact or any(s in lowered for s in signals)
 
-    def _evaluate_conflict(
-        self, perc: PerceptionResult, visual_emotion: tuple[str, float] | None
-    ) -> tuple[bool, str]:
-        """
-        Decide whether a vision/speech conflict should be surfaced this turn.
+    def _student_says_nothing_wrong(self, user_text: str) -> bool:
+        lowered = user_text.lower()
+        signals = [
+            "nothing much", "i'm fine", "i am fine", "doing good", "doing well",
+            "all good", "not much", "nothing specific", "nothing really",
+            "everything's fine", "everything is fine", "no nothing",
+        ]
+        return any(s in lowered for s in signals)
 
-        Returns (conflict_active, instruction_string).
-        """
+    def _evaluate_conflict(
+        self, perc: PerceptionResult, visual_emotion: tuple[str, float] | None,
+        user_text: str = "",
+    ) -> tuple[bool, str]:
         if visual_emotion is None:
+            return False, ""
+
+        if self.turn_count <= 2:
+            return False, ""
+
+        if self._student_says_nothing_wrong(user_text):
             return False, ""
 
         v_label, v_conf = visual_emotion
 
-        # Need reasonable confidence from both channels.
-        # Also require the text emotion to be non-neutral — if the student
-        # said nothing emotional, there is nothing to conflict with.
         if v_conf < 0.5 or perc.emotion.strength < 0.25:
             return False, ""
         if perc.emotion.label in ("neutral", "calm") and perc.emotion.strength < 0.4:
             return False, ""
 
         score = _conflict_score(v_label, perc.emotion.label)
-        if score < 0.5:
+        if score < 0.65:
             return False, ""
 
-        # Throttle: don't surface again within 3 turns
         if (
             self.conflict_named_at_turn is not None
             and (self.turn_count - self.conflict_named_at_turn) < 3
@@ -315,9 +337,11 @@ class Agent:
             return False, ""
 
         instruction = (
-            f"Their face reads as {v_label} but their words read as {perc.emotion.label}. "
-            "Name the gap once, gently, as a single body-awareness question — not a confrontation. "
-            "Example: 'You say you're fine — where are you holding that in your body right now?'"
+            f"Their face reads as {v_label} but their words suggest {perc.emotion.label}. "
+            "Gently note the gap in one natural sentence — like a perceptive person would, not a therapist. "
+            "Example: 'You say you're okay, but you don't seem it — what's actually going on?' "
+            "Example: 'You sound fine but you look like something's on your mind.' "
+            "Example: 'You seem a little off — everything alright?'"
         )
         return True, instruction
 
@@ -333,12 +357,12 @@ class Agent:
         retrieved: dict,
         visual_emotion: tuple[str, float] | None = None,
     ) -> str:
-        # --- conflict detection -------------------------------------------
-        conflict_active, conflict_instruction = self._evaluate_conflict(perc, visual_emotion)
+        conflict_active, conflict_instruction = self._evaluate_conflict(
+            perc, visual_emotion, user_text=user_text
+        )
         if conflict_active:
             self.conflict_named_at_turn = self.turn_count
 
-        # --- profile / memory context ------------------------------------
         profile_block = ltm.format_for_prompt(self.profile)
         context_parts: list[str] = []
 
@@ -353,9 +377,10 @@ class Agent:
         if mem_snippets:
             context_parts.append("You remember: " + " | ".join(mem_snippets))
 
-        if retrieved.get("procedural") and strat.name == SUGGEST_INTERVENTION:
+        # Always surface procedural techniques when available, not just on SUGGEST_INTERVENTION
+        if retrieved.get("procedural"):
             tech = retrieved["procedural"][0]["document"].split("\n")[0]
-            context_parts.append(f"Technique you could mention: {tech}")
+            context_parts.append(f"Relevant technique: {tech}")
 
         if retrieved.get("divergences") and strat.name == GROUND_ON_DIVERGENCE:
             context_parts.append(
@@ -364,34 +389,30 @@ class Agent:
 
         context_block = "\n".join(context_parts)
 
-        # --- token budget ------------------------------------------------
+        # Token budget — give SUGGEST_INTERVENTION more room to be useful
         token_budget = {
             ACKNOWLEDGE: 40,
             SMALL_TALK: 45,
-            SUGGEST_INTERVENTION: 80,
+            SUGGEST_INTERVENTION: 120,
             GROUND_ON_DIVERGENCE: 55,
-        }.get(strat.name, 45)
+        }.get(strat.name, 55)
 
-        # --- build message list ------------------------------------------
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
         for turn in self.stm.get_history():
             role = "assistant" if turn.role == "agent" else "user"
             messages.append({"role": role, "content": turn.content})
 
-        # --- user prompt assembly ----------------------------------------
         user_prompt_parts: list[str] = []
 
         if context_block:
             user_prompt_parts.append(f"[context]\n{context_block}")
 
-        # Direction: conflict takes full priority; confusion is second;
-        # normal strategy otherwise.
         if conflict_active:
             user_prompt_parts.append(f"[direction] {conflict_instruction}")
             user_prompt_parts.append(
-                "Your only job this turn: name the gap between their face and their words "
-                "as one gentle body-awareness question. Nothing else."
+                "Your only job this turn: note the mismatch in one plain, natural sentence. "
+                "No clinical language. No abstract concepts."
             )
         elif self._is_confused(user_text):
             user_prompt_parts.append(
@@ -401,8 +422,18 @@ class Agent:
         else:
             user_prompt_parts.append(f"[direction] {strat.instruction}")
 
-            # Soft hints (only when no override)
             hints: list[str] = []
+            _negative_emotions = {"stressed", "anxious", "overwhelmed", "sad", "angry", "frustrated"}
+            if perc.emotion.strength >= 0.4 and perc.emotion.label in _negative_emotions:
+                hints.append(
+                    f"They seem {perc.emotion.label} (strength {perc.emotion.strength:.2f}). "
+                    "Acknowledge briefly then move to something useful."
+                )
+            if strat.name == SUGGEST_INTERVENTION:
+                hints.append(
+                    "Do NOT just reflect their feelings back. Give one concrete, practical suggestion. "
+                    "Make it specific to what they said. Frame it as an option, not a command."
+                )
             if strat.divergence_context:
                 hints.append(
                     f"You noticed: {strat.divergence_context}. "
@@ -412,10 +443,14 @@ class Agent:
                 hints.append("They're leaving. Say bye warmly. One line. No questions.")
             if self.turn_count <= 2:
                 hints.append("Early in the conversation. Keep it light.")
+            if self._student_says_nothing_wrong(user_text):
+                hints.append(
+                    "They said nothing is wrong. Believe them. "
+                    "Do NOT suggest they are hiding something or holding back."
+                )
             if hints:
                 user_prompt_parts.append(f"[note] {' '.join(hints)}")
 
-        # Anchor the model to the literal student words
         user_prompt_parts.append(
             f'The student said exactly: "{user_text}"\n'
             f"Their words are: {' / '.join(user_text.split())}."
@@ -427,17 +462,18 @@ class Agent:
             )
         else:
             user_prompt_parts.append(
-                "Reply in 1 short sentence. No quotes. "
+                "Reply in 1-2 short sentences. No quotes. "
                 "Do NOT repeat or paraphrase what they just said. "
                 "Do NOT start with 'You said' or 'You mentioned'. "
                 "Respond to what they mean, not what they said. "
-                "NEVER invent names, courses, readings, people, dates, or any specific detail "
-                "they have not mentioned in this conversation."
+                "NEVER suggest the student is hiding something or holding back. "
+                "NEVER invent names, courses, readings, assignments, midterms, syllabi, "
+                "websites, or ANY detail they have not explicitly said in this conversation. "
+                "If you have no concrete information to reference, speak only in general terms."
             )
 
         messages.append({"role": "user", "content": "\n".join(user_prompt_parts)})
 
-        # --- LLM call ----------------------------------------------------
         try:
             resp = ollama.chat(
                 model=config.LLM_MODEL,

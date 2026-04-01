@@ -193,6 +193,8 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
     silent_time = 0.0
     speech_duration = 0.0
     checked_this_silence = False
+    projection_overrides = 0
+    _MAX_PROJECTION_OVERRIDES = 3  # hard cap — never loop more than this
 
     print("[speech] Listening …")
 
@@ -255,7 +257,8 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                                 and speech_duration >= min_speech
                             ):
                                 ratio = _project_turn_completion(partial_text, context)
-                                if ratio < config.TURN_RATIO_THRESHOLD:
+                                if ratio < config.TURN_RATIO_THRESHOLD and projection_overrides < _MAX_PROJECTION_OVERRIDES:
+                                    projection_overrides += 1
                                     print("[speech] Projection overrode heuristic — continuing")
                                     checked_this_silence = False
                                 else:
@@ -278,6 +281,16 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                                 print("[speech] Turn complete (LLM projection)")
                                 recording_done.set()
                                 break
+
+    # Drain any remaining blocks the callback queued after recording_done was set.
+    # Without this, the last words of an utterance get cut when the loop breaks
+    # before the queue is empty — "what was the shift" becomes just "Shift."
+    while True:
+        try:
+            block = audio_q.get_nowait()
+            frames.append(block)
+        except queue.Empty:
+            break
 
     if not frames:
         return np.zeros(0, dtype="float32")

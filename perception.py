@@ -201,8 +201,8 @@ def fast_perceive(
     # Print fusion line for fast path too so terminal always shows vision state
     if visual_emotion is not None:
         v_label, _ = visual_emotion
-        # Only flag as conflict when text emotion is actually present
-        is_conflict = best.label != v_label and best.strength >= 0.25
+        # Only flag as conflict when labels genuinely differ AND text emotion is present
+        is_conflict = (best.label != v_label) and (best.strength >= 0.25) and (v_label != best.label)
         tag = f" (face: {v_label} — conflict)" if is_conflict else ""
         print(
             f"  [vision: {v_label}{tag}, text: {best.label} "
