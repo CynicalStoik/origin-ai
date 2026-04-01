@@ -70,7 +70,7 @@ def _is_turn_complete(transcript: str) -> bool:
     last = words[-1].rstrip(".,!? ")
     one_word = {
         "bye", "goodbye", "thanks", "okay", "alright", "yeah", "yep",
-        "nope", "no", "yes", "sure", "right", "later", "hmm", "hm", "mhm",
+        "nope", "sure", "right", "later", "hmm", "hm", "mhm",
     }
     if last in one_word:
         return True

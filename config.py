@@ -43,7 +43,7 @@ VISION_CAMERA_INDEX = int(os.environ.get("VISION_CAMERA", "0"))  # webcam device
 VISION_FRAME_INTERVAL = 0.5  # seconds between FER inference calls (avoid CPU spike)
 
 # Turn Completion Projection 
-IPU_DURATION = 0.4
+IPU_DURATION = 0.7
 TURN_RATIO_THRESHOLD = 0.6
 TURN_FALLBACK_THRESHOLD = 1.25
 MIN_SPEECH_DURATION = 1.0
