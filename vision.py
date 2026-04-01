@@ -4,14 +4,16 @@ import time
 import threading
 import config
 
-# DeepFace emotion labels → agent's internal emotion vocabulary
+# DeepFace emotion labels → agent's internal emotion vocabulary.
+# NOTE: "happy" must stay "happy" — remapping it to "calm" breaks conflict
+# detection because agent.py scores valence using the raw label.
 _LABEL_MAP: dict[str, str] = {
-    "happy": "calm",
+    "happy": "happy",
     "sad": "sad",
     "angry": "angry",
-    "fear": "anxious",
-    "disgust": "frustrated",
-    "surprise": "overwhelmed",
+    "fear": "fearful",
+    "disgust": "disgusted",
+    "surprise": "surprised",
     "neutral": "neutral",
 }
 
@@ -19,6 +21,7 @@ _LABEL_MAP: dict[str, str] = {
 _lock = threading.Lock()
 _latest_label: str = "neutral"
 _latest_strength: float = 0.0
+_has_detection: bool = False   # True once DeepFace has returned at least one result
 _running = False
 _thread: threading.Thread | None = None
 
@@ -28,9 +31,8 @@ _camera_ok = False
 
 
 def _detection_loop():
-    global _running, _latest_label, _latest_strength, _camera_ok
+    global _running, _latest_label, _latest_strength, _has_detection, _camera_ok
 
-    # Import inside thread — these are heavy and slow to load
     try:
         import cv2
         from deepface import DeepFace
@@ -74,14 +76,13 @@ def _detection_loop():
             face = result[0] if isinstance(result, list) else result
             emotions: dict[str, float] = face["emotion"]
             dominant: str = face["dominant_emotion"]
-            strength = (
-                float(emotions.get(dominant, 0.0)) / 100.0
-            )
+            strength = float(emotions.get(dominant, 0.0)) / 100.0
             mapped = _LABEL_MAP.get(dominant, "neutral")
 
             with _lock:
                 _latest_label = mapped
                 _latest_strength = strength
+                _has_detection = True
 
             consecutive_errors = 0
 
@@ -103,17 +104,10 @@ def _detection_loop():
 
 
 def _request_camera_permission() -> bool:
-    """
-    Open and immediately release the camera on the main thread.
-
-    On macOS, AVFoundation requires the permission dialog to be triggered
-    from the main thread. If we skip this and open the camera inside a
-    background thread, macOS blocks the request entirely with status 0.
-    """
     try:
         import cv2
     except (ImportError, ValueError):
-        return True  # will be caught again in the thread with a proper message
+        return True
 
     print("[vision] Requesting camera access …")
     cap = cv2.VideoCapture(config.VISION_CAMERA_INDEX)
@@ -133,17 +127,11 @@ def _request_camera_permission() -> bool:
 
 
 def start() -> bool:
-    """
-    Launch the background detection thread and block until the camera is
-    confirmed open (or has failed). Returns True on success.
-    Safe to call multiple times.
-    """
     global _running, _thread
 
     if _running:
         return _camera_ok
 
-    # macOS: trigger the camera permission dialog on the main thread first
     if not _request_camera_permission():
         return False
 
@@ -155,7 +143,6 @@ def start() -> bool:
     _thread.start()
 
     print("[vision] Initialising camera …")
-    # Wait up to 20 s — DeepFace downloads its model weights on first run
     _started_event.wait(timeout=20.0)
 
     if not _camera_ok:
@@ -167,7 +154,6 @@ def start() -> bool:
 
 
 def stop():
-    """Signal the detection thread to stop and wait for it to finish."""
     global _running, _thread
 
     _running = False
@@ -180,17 +166,20 @@ def stop():
 def get_emotion() -> tuple[str, float] | None:
     """
     Return the latest detected facial emotion as (label, strength).
-    Returns None if camera failed to open or no face detected yet.
+    Returns None if camera failed or no detection has occurred yet.
     """
     if not _camera_ok:
         return None
 
     with _lock:
+        has = _has_detection
         label = _latest_label
         strength = _latest_strength
 
-    # strength == 0.0 means no real detection has occurred yet
-    if strength == 0.0:
+    # Use _has_detection flag instead of strength == 0.0 check.
+    # The old guard blocked valid results when the dominant emotion
+    # happened to score very low confidence.
+    if not has:
         return None
 
     return (label, strength)

@@ -56,7 +56,7 @@ _EMOTION_KEYWORDS: dict[str, tuple[str, float]] = {
     "confused": ("confused", 0.5),
     "lost": ("confused", 0.4),
     "stuck": ("frustrated", 0.5),
-    "happy": ("calm", 0.5),
+    "happy": ("happy", 0.5),   # was "calm" — must match _EMOTION_VALENCE in agent.py
     "good": ("calm", 0.3),
     "great": ("calm", 0.5),
     "fine": ("neutral", 0.2),
@@ -98,7 +98,7 @@ _NEGATIVE_EMOTIONS = frozenset({
     "stressed", "anxious", "sad", "frustrated", "angry",
     "overwhelmed", "confused", "ashamed",
 })
-_POSITIVE_EMOTIONS = frozenset({"calm", "hopeful"})
+_POSITIVE_EMOTIONS = frozenset({"calm", "hopeful", "happy"})  # added "happy"
 
 
 _PERCEPTION_PROMPT = """\
@@ -113,7 +113,7 @@ Recent context:
 Return JSON with this exact structure:
 {{
   "emotion": {{
-    "label": "<one of: calm, stressed, anxious, sad, frustrated, angry, hopeful, \
+    "label": "<one of: calm, happy, stressed, anxious, sad, frustrated, angry, hopeful, \
 confused, ashamed, overwhelmed, neutral>",
     "strength": <float 0.0-1.0>
   }},
@@ -198,6 +198,17 @@ def fast_perceive(
             topic="wellbeing",
         ))
 
+    # Print fusion line for fast path too so terminal always shows vision state
+    if visual_emotion is not None:
+        v_label, _ = visual_emotion
+        # Only flag as conflict when text emotion is actually present
+        is_conflict = best.label != v_label and best.strength >= 0.25
+        tag = f" (face: {v_label} — conflict)" if is_conflict else ""
+        print(
+            f"  [vision: {v_label}{tag}, text: {best.label} "
+            f"→ fused: {fused.label} {fused.strength:.2f}]"
+        )
+
     return PerceptionResult(
         emotion=fused, claims=claims, is_continuation=is_cont,
         visual_emotion=visual_emotion,
@@ -246,7 +257,8 @@ def perceive(
 
     if visual_emotion is not None:
         v_label, _ = visual_emotion
-        tag = "" if text_emotion.label == v_label else f" (face: {v_label} — conflict)"
+        is_conflict = text_emotion.label != v_label and text_emotion.strength >= 0.25
+        tag = f" (face: {v_label} — conflict)" if is_conflict else ""
         print(
             f"  [vision: {v_label}{tag}, text: {text_emotion.label} "
             f"→ fused: {fused_emotion.label} {fused_emotion.strength:.2f}]"

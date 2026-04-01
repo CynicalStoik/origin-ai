@@ -295,8 +295,12 @@ class Agent:
 
         v_label, v_conf = visual_emotion
 
-        # Need reasonable confidence from both channels
-        if v_conf < 0.5 or perc.emotion.strength < 0.2:
+        # Need reasonable confidence from both channels.
+        # Also require the text emotion to be non-neutral — if the student
+        # said nothing emotional, there is nothing to conflict with.
+        if v_conf < 0.5 or perc.emotion.strength < 0.25:
+            return False, ""
+        if perc.emotion.label in ("neutral", "calm") and perc.emotion.strength < 0.4:
             return False, ""
 
         score = _conflict_score(v_label, perc.emotion.label)
