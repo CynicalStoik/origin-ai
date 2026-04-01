@@ -77,7 +77,10 @@ def main():
                     {"role": t.role, "content": t.content}
                     for t in agent.stm.get_history()
                 ]
-                audio = speech.record_audio(context=stm_context)
+                audio = speech.record_audio(
+                    context=stm_context,
+                    on_turn_start=agent.start_speculative_perception,
+                )
                 if audio.size == 0:
                     continue
                 user_text = speech.transcribe(audio)

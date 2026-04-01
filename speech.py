@@ -174,7 +174,7 @@ def transcribe(audio: np.ndarray) -> str:
     return " ".join(seg.text.strip() for seg in segments).strip()
 
 
-def record_audio(context: list[dict] | None = None) -> np.ndarray:
+def record_audio(context: list[dict] | None = None, on_turn_start=None) -> np.ndarray:
     """Record with silence detection + Whisper heuristic turn completion."""
     sr = config.SAMPLE_RATE
     silence_dur = config.SILENCE_DURATION
@@ -279,10 +279,14 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                                     checked_this_silence = False
                                 else:
                                     print(f"[speech] Turn complete: '{partial_text}'")
+                                    if on_turn_start:
+                                        on_turn_start(partial_text)
                                     recording_done.set()
                                     break
                             else:
                                 print(f"[speech] Turn complete: '{partial_text}'")
+                                if on_turn_start:
+                                    on_turn_start(partial_text)
                                 recording_done.set()
                                 break
 

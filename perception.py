@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re as _re
 import config
 import ollama
 from dataclasses import dataclass, field
@@ -101,6 +102,20 @@ _NEGATIVE_EMOTIONS = frozenset({
 _POSITIVE_EMOTIONS = frozenset({"calm", "hopeful", "happy"})  # added "happy"
 
 
+_CLAIM_RULES: list[tuple] = [
+    # (compiled_regex, proposition, truth_value, topic)
+    (_re.compile(r"\b(not|haven'?t|can'?t|don'?t)\b.{0,20}\bsleep(ing)?\b|\bsleep(ing)?\b.{0,15}\b(bad|poor|badly|awful|terrible|rough)\b|\bcan'?t sleep\b|\bno sleep\b", _re.I), "student is sleeping well", False, "sleep"),
+    (_re.compile(r"\bsleep(ing)?\b.{0,15}\b(well|fine|good|great|okay|ok)\b|\bsleep(ing)? (well|fine|good|great)\b|\bbeen sleeping\b", _re.I), "student is sleeping well", True, "sleep"),
+    (_re.compile(r"\bgo(ing)? to bed\b.{0,15}\b([12]\s*am|midnight|late|after midnight)\b|\bstay(ing)? up\b.{0,15}\b(late|all night)\b|\b2am\b|\b1am\b", _re.I), "student goes to bed at a reasonable time", False, "sleep"),
+    (_re.compile(r"\b(stressed|stress(ed)? out|overwhelmed|overwhelm)\b", _re.I), "student is managing stress well", False, "stress"),
+    (_re.compile(r"\bnot (stressed|overwhelmed)\b|\bless stressed\b|\bstress.free\b", _re.I), "student is managing stress well", True, "stress"),
+    (_re.compile(r"\b(assignments?|homework|deadlines?|exams?|midterms?|papers?|projects?)\b.{0,20}\b(due|piling|a lot|behind|overdue)\b|\ba lot of (work|assignments?|homework)\b", _re.I), "student has manageable academic workload", False, "academics"),
+    (_re.compile(r"\bprocrastinat\b|\bcan'?t (get myself to start|start|focus)\b|\bkeep putting\b|\bputting (it|them) off\b", _re.I), "student can manage their academic tasks proactively", False, "academics"),
+    (_re.compile(r"\bcan'?t (focus|concentrate)\b|\bdistracte?d\b|\bcan'?t get anything done\b", _re.I), "student can focus on their work", False, "focus"),
+    (_re.compile(r"\b(feeling|feel)\b.{0,10}\b(good|great|fine|well|okay|ok|better|happy|calm)\b|\bfeeling (much )?better\b", _re.I), "student is doing well emotionally", True, "wellbeing"),
+    (_re.compile(r"\b(feeling|feel)\b.{0,10}\b(bad|terrible|awful|sad|down|low|depressed|anxious|worried|scared)\b|\bnot (feeling|doing) (well|good|great|fine)\b", _re.I), "student is doing well emotionally", False, "wellbeing"),
+]
+
 _PERCEPTION_PROMPT = """\
 You are a perception module for a mindfulness coaching agent. Analyze the student's \
 utterance and return ONLY valid JSON (no markdown, no extra text).
@@ -183,14 +198,30 @@ def fast_perceive(
     is_cont = bool(context and not context.startswith("(No prior"))
 
     claims = []
+    # Keyword-based topic claims — extracted without LLM
+    seen_propositions: set[str] = set()
+    for pattern, proposition, truth_value, topic in _CLAIM_RULES:
+        if proposition in seen_propositions:
+            continue
+        if pattern.search(utterance):
+            seen_propositions.add(proposition)
+            claims.append(Claim(
+                proposition=proposition,
+                holder="student",
+                truth_value=truth_value,
+                confidence=0.75,
+                topic=topic,
+            ))
+    # Generic wellbeing claim from emotion keywords (fallback)
     if fused.label in _NEGATIVE_EMOTIONS | _POSITIVE_EMOTIONS and fused.strength >= 0.3:
-        claims.append(Claim(
-            proposition="student is doing well emotionally",
-            holder="student",
-            truth_value=fused.label in _POSITIVE_EMOTIONS,
-            confidence=max(fused.strength, 0.6),
-            topic="wellbeing",
-        ))
+        if "student is doing well emotionally" not in seen_propositions:
+            claims.append(Claim(
+                proposition="student is doing well emotionally",
+                holder="student",
+                truth_value=fused.label in _POSITIVE_EMOTIONS,
+                confidence=max(fused.strength, 0.6),
+                topic="wellbeing",
+            ))
 
     # Print fusion line for fast path too so terminal always shows vision state
     if visual_emotion is not None:
@@ -215,6 +246,12 @@ def perceive(
     visual_emotion: tuple[str, float] | None = None,
 ) -> PerceptionResult:
     """Full LLM-based perception for substantive utterances."""
+    # Fast path: if rule-based extraction already found topic-specific claims,
+    # skip the LLM call entirely — one less qwen3 thinking phase per turn.
+    fast_result = fast_perceive(utterance, context, visual_emotion=visual_emotion)
+    if any(c.topic and c.topic != "wellbeing" for c in fast_result.claims):
+        return fast_result
+
     # Visual intentionally excluded from perception prompt — injecting it biases
     # the speech emotion classification toward the visual signal. Visual-verbal
     # conflict is handled separately in the response layer (_evaluate_conflict).
@@ -228,7 +265,7 @@ def perceive(
         resp = ollama.chat(
             model=config.LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.1, "num_predict": 2500},
+            options={"temperature": 0.1, "num_predict": 1800},
             format="json",
         )
         raw = resp["message"]["content"].strip()

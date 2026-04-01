@@ -51,12 +51,16 @@ def recall_by_topic(topic: str, n: int = 5):
 
 
 def recall_active_divergences(topic: str, n: int = 5):
-    """Return divergences that are still contested or open."""
+    """Return divergences that are still contested or open.
+    Only entries with a prior_id are actual contradictions — freshly stored
+    beliefs have no prior_id and must not be surfaced as divergences.
+    """
     results = store.query("perspective", topic, n_results=n)
     return [
         r
         for r in results
         if r["metadata"].get("negotiation_status") in ("contested", "open")
+        and r["metadata"].get("prior_id")
     ]
 
 

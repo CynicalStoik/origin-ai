@@ -192,6 +192,7 @@ class Agent:
         self.turn_count = 0
         self.conflict_named_at_turn: int | None = None
         self._last_response: str = ""
+        self._speculative_perc: PerceptionResult | None = None
 
     # ------------------------------------------------------------------
     # Greeting
@@ -220,6 +221,22 @@ class Agent:
         return random.choice(candidates)
 
     # ------------------------------------------------------------------
+    # Speculative perception
+    # ------------------------------------------------------------------
+
+    def start_speculative_perception(self, partial_text: str) -> None:
+        """Kick off perception in a background thread on partial transcript."""
+        import threading
+        context = self.stm.format_for_prompt()
+        word_count = len(partial_text.split())
+        def _run():
+            if word_count <= config.PERCEPTION_FAST_WORD_LIMIT:
+                self._speculative_perc = fast_perceive(partial_text, context)
+            else:
+                self._speculative_perc = perceive(partial_text, context)
+        threading.Thread(target=_run, daemon=True).start()
+
+    # ------------------------------------------------------------------
     # Main turn pipeline
     # ------------------------------------------------------------------
 
@@ -234,7 +251,11 @@ class Agent:
         context = self.stm.format_for_prompt()
         word_count = len(user_text.split())
 
-        if word_count <= config.PERCEPTION_FAST_WORD_LIMIT:
+        if self._speculative_perc is not None:
+            perc = self._speculative_perc
+            self._speculative_perc = None
+            print("[perception] Used speculative result")
+        elif word_count <= config.PERCEPTION_FAST_WORD_LIMIT:
             perc = fast_perceive(user_text, context, visual_emotion=visual_emotion)
         else:
             perc = perceive(user_text, context, visual_emotion=visual_emotion)
@@ -423,7 +444,7 @@ class Agent:
 
         # Token budget — content tokens wanted + thinking overhead for qwen3
         # qwen3:8b generates ~600-2500 thinking tokens before content; add 3000 overhead
-        _THINK_OVERHEAD = 3000
+        _THINK_OVERHEAD = 4500
         token_budget = {
             ACKNOWLEDGE: 40,
             SMALL_TALK: 45,
@@ -483,8 +504,9 @@ class Agent:
             _agreement_words = {"sure", "okay", "ok", "yeah", "yep", "yes", "alright", "fine", "go ahead", "why not", "sure why not"}
             if user_text.lower().strip().rstrip(".,!") in _agreement_words:
                 hints.append(
-                    "They just agreed. Follow through on whatever you last suggested. "
-                    "Don't pivot, don't ask if they want something different — just continue naturally from where you left off."
+                    "They just agreed with your last suggestion. DO NOT repeat or rephrase what you just said. "
+                    "Move to the NEXT step — give a follow-up tip, ask how it went, or move the conversation forward. "
+                    "Example: if you just suggested a neck stretch, say something like 'Good — while you're at it, take a slow breath too.'"
                 )
             if self._is_closing(user_text):
                 hints.append("They're leaving. Say bye warmly. One line. No questions.")
@@ -530,7 +552,7 @@ class Agent:
                     messages=messages,
                     options={
                         "temperature": 0.55,
-                        "num_predict": token_budget + (1000 * attempt),
+                        "num_predict": token_budget + (2000 * attempt),
                         "repeat_penalty": 1.15,
                         "top_k": 30,
                         "top_p": 0.85,
