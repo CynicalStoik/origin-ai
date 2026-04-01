@@ -126,12 +126,14 @@ def _project_turn_completion(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": context_str},
                 ],
-                options={"temperature": 1.0, "top_k": 5, "num_predict": m},
+                options={"temperature": 1.0, "top_k": 5, "num_predict": 2000 + m},
             )
             continuation = response["message"]["content"].strip()
+            if not continuation:
+                # Empty content = thinking ate budget = projection failed, don't count as complete
+                return False
             return (
                 "<END>" in continuation
-                or continuation == ""
                 or continuation.endswith((".", "?", "!"))
                 or len(continuation.split()) <= 1
             )
@@ -163,11 +165,10 @@ def transcribe(audio: np.ndarray) -> str:
         audio,
         beam_size=5,
         language="en",
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 300},
+        vad_filter=False,  # we do our own VAD — letting Whisper re-filter strips short clips
         initial_prompt=(
-            "Sure, yeah, okay, no, I don't know, maybe, actually, "
-            "well, right, exactly, hmm, uh, like, so, and, but."
+            "What's up? Hey. Not much. Yeah, okay, sure, I don't know, "
+            "actually, hmm, uh, like, right, alright."
         ),
     )
     return " ".join(seg.text.strip() for seg in segments).strip()
@@ -193,6 +194,10 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
         audio_q.put(indata.copy())
 
     frames: list[np.ndarray] = []
+    # Rolling pre-buffer: keep ~0.3s of audio before speech is detected so
+    # the first word isn't clipped if it starts below the RMS threshold.
+    _PRE_BUFFER_BLOCKS = 3
+    pre_buffer: list[np.ndarray] = []
     speech_started = False
     silent_time = 0.0
     speech_duration = 0.0
@@ -219,9 +224,16 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
             is_silent = rms <= config.SILENCE_THRESHOLD
 
             if not is_silent:
+                if not speech_started:
+                    # Prepend pre-buffer so the first word isn't clipped
+                    frames.extend(pre_buffer)
                 speech_started = True
                 silent_time = 0.0
                 checked_this_silence = False
+            elif not speech_started:
+                pre_buffer.append(block)
+                if len(pre_buffer) > _PRE_BUFFER_BLOCKS:
+                    pre_buffer.pop(0)
 
             if speech_started:
                 frames.append(block)
