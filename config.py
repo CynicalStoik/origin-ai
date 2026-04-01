@@ -17,7 +17,7 @@ if hasattr(sys.stderr, "reconfigure"):
 PAM_ENABLED = True
 # ──────────────────────────────────────────────────────────────────────────────
 
-LLM_MODEL = os.environ.get("LLM_MODEL", "gemma2:9b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 
