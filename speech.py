@@ -16,6 +16,10 @@ _pygame_inited = False
 _tts_loop: asyncio.AbstractEventLoop | None = None
 _tts_thread: threading.Thread | None = None
 
+# Faster-whisper needs at least ~1 second of audio or it mangles short words.
+# "What's up" at normal pace is ~0.5 s — below this threshold we pad.
+_MIN_AUDIO_SAMPLES = 16_000  # 1 s at 16 kHz
+
 
 def _get_whisper_model() -> WhisperModel:
     global _whisper_model
@@ -141,6 +145,30 @@ def _project_turn_completion(
     return sum(results) / n
 
 
+_LEAD_IN_SAMPLES = 4_800  # 0.3 s silence prepended before speech
+
+def transcribe(audio: np.ndarray) -> str:
+    """Transcribe audio, padding short clips so Whisper doesn't mangle them."""
+    if audio.size == 0:
+        return ""
+    # Prepend silence so Whisper has a lead-in before the first word.
+    # Without this, words at the very start ("It has been ...") get dropped
+    # because Whisper expects a little silence before speech begins.
+    audio = np.concatenate([np.zeros(_LEAD_IN_SAMPLES, dtype="float32"), audio])
+    # Pad to minimum total length for very short clips.
+    if audio.size < _MIN_AUDIO_SAMPLES:
+        audio = np.pad(audio, (0, _MIN_AUDIO_SAMPLES - audio.size))
+    model = _get_whisper_model()
+    segments, _ = model.transcribe(
+        audio,
+        beam_size=5,
+        language="en",
+        vad_filter=True,
+        vad_parameters={"min_silence_duration_ms": 300},
+    )
+    return " ".join(seg.text.strip() for seg in segments).strip()
+
+
 def record_audio(context: list[dict] | None = None) -> np.ndarray:
     """Record with silence detection + Whisper heuristic turn completion."""
     sr = config.SAMPLE_RATE
@@ -203,11 +231,12 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                         recording_done.set()
                         break
 
-                    # heuristic check at IPU boundary
+                    # heuristic check at IPU boundary — only when we have
+                    # enough speech that transcription is reliable
                     if (
                         not checked_this_silence
                         and silent_time >= ipu_dur
-                        and speech_duration >= 0.3
+                        and speech_duration >= min_speech  # was 0.3 — raised to min_speech
                     ):
                         checked_this_silence = True
                         partial_audio = np.concatenate(frames, axis=0).flatten()
@@ -254,14 +283,6 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
         return np.zeros(0, dtype="float32")
 
     return np.concatenate(frames, axis=0).flatten()
-
-
-def transcribe(audio: np.ndarray) -> str:
-    if audio.size == 0:
-        return ""
-    model = _get_whisper_model()
-    segments, _ = model.transcribe(audio, beam_size=3, language="en")
-    return " ".join(seg.text.strip() for seg in segments).strip()
 
 
 async def _synthesise(text: str) -> bytes:
