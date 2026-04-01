@@ -3,6 +3,8 @@ import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 os.environ["PYTHONUNBUFFERED"] = "1"
+os.environ.setdefault("HF_HUB_OFFLINE", "1")        # no HF network calls
+os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")  # silence LOAD REPORT
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
