@@ -17,11 +17,11 @@ if hasattr(sys.stderr, "reconfigure"):
 PAM_ENABLED = True
 # ──────────────────────────────────────────────────────────────────────────────
 
-LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 
-WHISPER_MODEL_SIZE = "base.en"
+WHISPER_MODEL_SIZE = "small"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 TTS_VOICE = "en-US-EmmaMultilingualNeural"

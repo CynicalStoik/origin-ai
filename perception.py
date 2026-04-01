@@ -135,21 +135,15 @@ Rules:
 - Extract 0-3 claims. Only extract clear factual statements or beliefs, not \
 questions or pleasantries.
 - Emotion strength: 0.0 = not at all, 1.0 = extremely strong.
+- Always phrase propositions in POSITIVE form. Use truth_value to indicate \
+whether the student affirms or denies it. \
+Example: "I'm not sleeping well" → proposition: "student is sleeping well", truth_value: false. \
+Example: "I sleep fine" → proposition: "student is sleeping well", truth_value: true. \
+This allows contradictions between turns to be detected reliably.
 - If the student contradicts something they said before, still record what they \
 say NOW with truth_value reflecting their current stance.
 - Return ONLY the JSON object, nothing else.
 """
-
-_VISUAL_HINT_AGREE = (
-    "Visual signal: their facial expression also shows {label} "
-    "(confidence {strength:.2f}) — consistent with their words.\n"
-)
-
-_VISUAL_HINT_CONFLICT = (
-    "Visual signal: their facial expression shows {visual_label} "
-    "(confidence {visual_strength:.2f}), which may conflict with what "
-    "they said. Consider this non-verbal cue when judging their emotional state.\n"
-)
 
 
 def _fuse_emotions(
@@ -221,18 +215,13 @@ def perceive(
     visual_emotion: tuple[str, float] | None = None,
 ) -> PerceptionResult:
     """Full LLM-based perception for substantive utterances."""
-    visual_hint = ""
-    if visual_emotion is not None:
-        v_label, v_strength = visual_emotion
-        visual_hint = _VISUAL_HINT_CONFLICT.format(
-            visual_label=v_label,
-            visual_strength=v_strength,
-        )
-
+    # Visual intentionally excluded from perception prompt — injecting it biases
+    # the speech emotion classification toward the visual signal. Visual-verbal
+    # conflict is handled separately in the response layer (_evaluate_conflict).
     prompt = _PERCEPTION_PROMPT.format(
         utterance=utterance,
         context=context,
-        visual_hint=visual_hint,
+        visual_hint="",
     )
 
     try:

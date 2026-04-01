@@ -174,11 +174,13 @@ def select_strategy(
         for d in divergences
         if d["metadata"].get("negotiation_status") == "open"
     ]
+    # If on the same topic as a stored belief, surface the gap reliably
+    open_prob = 0.85 if perception.is_continuation else 0.4
     if (
         config.PAM_ENABLED
         and open_divs
         and turn_count >= config.GROUNDING_MIN_TURNS
-        and random.random() < 0.4
+        and random.random() < open_prob
     ):
         return StrategyResult(
             name=GROUND_ON_DIVERGENCE,

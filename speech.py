@@ -145,7 +145,7 @@ def _project_turn_completion(
     return sum(results) / n
 
 
-_LEAD_IN_SAMPLES = 4_800  # 0.3 s silence prepended before speech
+_LEAD_IN_SAMPLES = 8_000  # 0.5 s silence prepended before speech
 
 def transcribe(audio: np.ndarray) -> str:
     """Transcribe audio, padding short clips so Whisper doesn't mangle them."""
@@ -165,6 +165,10 @@ def transcribe(audio: np.ndarray) -> str:
         language="en",
         vad_filter=True,
         vad_parameters={"min_silence_duration_ms": 300},
+        initial_prompt=(
+            "Sure, yeah, okay, no, I don't know, maybe, actually, "
+            "well, right, exactly, hmm, uh, like, so, and, but."
+        ),
     )
     return " ".join(seg.text.strip() for seg in segments).strip()
 
