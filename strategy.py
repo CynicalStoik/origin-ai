@@ -163,6 +163,13 @@ def select_strategy(
 
     if not has_substance and perception.emotion.strength < 0.3:
         if not perception.claims:
+            # If there's prior context, this is an agreement/brief reply — continue naturally.
+            # Only use ACKNOWLEDGE when the conversation hasn't started yet.
+            if perception.is_continuation:
+                return StrategyResult(
+                    name=MATCH_AND_CONTINUE,
+                    instruction=STRATEGY_INSTRUCTIONS[MATCH_AND_CONTINUE],
+                )
             return StrategyResult(
                 name=ACKNOWLEDGE,
                 instruction=STRATEGY_INSTRUCTIONS[ACKNOWLEDGE],

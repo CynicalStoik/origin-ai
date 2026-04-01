@@ -470,6 +470,12 @@ class Agent:
                     "You remember what you said — check the conversation history. "
                     "Acknowledge it naturally, don't ask what shifted."
                 )
+            _agreement_words = {"sure", "okay", "ok", "yeah", "yep", "yes", "alright", "fine", "go ahead", "why not", "sure why not"}
+            if user_text.lower().strip().rstrip(".,!") in _agreement_words:
+                hints.append(
+                    "They just agreed. Follow through on whatever you last suggested. "
+                    "Don't pivot, don't ask if they want something different — just continue naturally from where you left off."
+                )
             if self._is_closing(user_text):
                 hints.append("They're leaving. Say bye warmly. One line. No questions.")
             if self.turn_count <= 2:
