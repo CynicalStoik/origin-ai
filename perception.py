@@ -228,10 +228,13 @@ def perceive(
         resp = ollama.chat(
             model=config.LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
+            think=False,
             options={"temperature": 0.1, "num_predict": 300},
             format="json",
         )
+        import re
         raw = resp["message"]["content"].strip()
+        raw = re.sub(r"<think>.*?</think>", "", raw, flags=re.DOTALL).strip()
         data = json.loads(raw)
     except Exception as e:
         print(f"[perception] LLM parse error: {e}")

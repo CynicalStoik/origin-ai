@@ -126,9 +126,11 @@ def _project_turn_completion(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": context_str},
                 ],
-                options={"temperature": 1.0, "top_k": 5, "num_predict": m},
+                think=False,
+                options={"temperature": 1.0, "top_k": 5, "num_predict": 20},
             )
-            continuation = response["message"]["content"].strip()
+            import re as _re
+            continuation = _re.sub(r"<think>.*?</think>", "", response["message"]["content"], flags=_re.DOTALL).strip()
             return (
                 "<END>" in continuation
                 or continuation == ""

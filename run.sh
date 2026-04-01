@@ -3,7 +3,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-MODEL="${LLM_MODEL:-gemma3:4b}"
+MODEL="${LLM_MODEL:-qwen3:8b}"
 MODE="${1:-text}"   # text | speech
 VISION="${2:-}"     # vision (optional second arg)
 

@@ -48,18 +48,16 @@ STRATEGY_INSTRUCTIONS = {
         "Example: student says 'I've been busy' → 'What's been taking most of it?'"
     ),
     ACKNOWLEDGE: (
-        "The student said something brief, vague, or seems unsure what to talk about. "
-        "If they seem to not know what to say or are asking what to talk about, "
-        "warmly introduce yourself and let them know what you are here for. "
-        "You are a mindfulness agent — you are here to support their wellbeing, "
-        "help them reflect, manage stress, and have an open conversation. "
-        "Keep it warm, brief, and inviting — one or two sentences max. "
-        "Example: student says 'anything I need to talk about?' → "
-        "'I'm a mindfulness coach here to support you — we can talk about anything "
-        "on your mind, whether that's stress, how you're feeling, or just how your day went.' "
-        "Example: student says 'yeah' → 'Yeah, go ahead — what's on your mind?' "
-        "Example: student says 'I don't know' → "
-        "'That's okay — we can start simple. How have you been feeling lately?'"
+        "The student said something brief or vague. "
+        "Ask ONE specific, grounded question — not 'how have you been feeling lately?' "
+        "Vary the question every time. Never repeat the same question twice. "
+        "Do NOT introduce yourself or explain what you do. "
+        "Example: student says 'I don't know' → 'What's been taking up most of your headspace?' "
+        "Example: student says 'yeah' → 'What's on your mind?' "
+        "Example: student says 'nothing much' → 'How's the week been treating you?' "
+        "Example: student says 'I guess' → 'Anything been bothering you lately?' "
+        "Example: student says 'fine' → 'What does fine actually look like for you right now?' "
+        "Example: student says 'I don't want to talk about it' → 'No worries — anything else on your mind?' "
     ),
     SMALL_TALK: (
         "Nothing heavy yet. Ask one genuine, specific question about their life. "
@@ -89,6 +87,7 @@ class StrategyResult:
 def select_strategy(
     perception: PerceptionResult,
     turn_count: int = 0,
+    grounded_divergences: set[str] | None = None,
 ) -> StrategyResult:
     topics = [c.topic for c in perception.claims if c.topic]
     query_topic = " ".join(topics) if topics else ""
@@ -120,11 +119,13 @@ def select_strategy(
     if config.PAM_ENABLED and query_topic and turn_count >= config.GROUNDING_MIN_TURNS:
         divergences = psp_mem.recall_active_divergences(query_topic, n=3)
 
+    _seen = grounded_divergences or set()
     contested = [
         d
         for d in divergences
         if d["metadata"].get("negotiation_status") == "contested"
         and d["metadata"].get("confidence", 0) > config.DIVERGENCE_EPSILON
+        and d["document"] not in _seen
     ]
 
     if contested and random.random() < config.GROUNDING_PROBABILITY:
@@ -173,6 +174,7 @@ def select_strategy(
         d
         for d in divergences
         if d["metadata"].get("negotiation_status") == "open"
+        and d["document"] not in _seen
     ]
     # If on the same topic as a stored belief, surface the gap reliably
     open_prob = 0.85 if perception.is_continuation else 0.4

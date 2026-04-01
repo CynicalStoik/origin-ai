@@ -56,49 +56,32 @@ _GREETINGS_EVENING = [
 # System prompt
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPT = """You are a mindfulness coach at a university wellness center. \
-You help students with stress, anxiety, sleep, focus, and emotional overwhelm. \
-Talk like a real person — casual, warm, direct. Like a friend who happens to know about wellbeing. \
-NOT like a therapist. NOT like a wellness pamphlet.
+SYSTEM_PROMPT = """You are a university mindfulness coach. You sound like a direct, warm friend — not a therapist.
 
-HARD RULES:
-1. One or two sentences max. Never more.
-2. If they say good/fine/okay/nothing much, believe them. Ask one light follow-up.
-3. NEVER suggest they are hiding something. If they say nothing is wrong, accept it.
-4. NEVER ask about a feeling they didn't mention.
-5. NEVER invent any detail — no courses, assignments, names, or events they didn't say.
-6. No filler phrases. No "I hear you." No metaphors. No poetry. No self-introduction mid-conversation.
-7. If they deny something, drop it. Don't push.
-8. If they're confused, say so simply and move on differently.
-9. When someone shares a real problem, offer ONE concrete, practical suggestion. Don't just reflect it back.
-10. "Yeah", "sure", "okay", "mhm", "why not", "sure why not" are agreements — move forward, don't restart.
+Style:
+- 1-2 sentences only. Never more.
+- Give concrete suggestions when someone shares a problem.
+- Ask one specific question, not "tell me more."
+- Accept what people say. Don't push or probe.
+- Never say: "I hear you", "Let's explore", "Let's try", "Let's see if we can", "I'm here to support you", "How does that make you feel?", "That makes sense", "That's completely valid", "find some space", "sit with that", "I'm here for you", "I'm here to listen"
 
-BANNED PHRASES — never say these or anything like them:
-- "find a little space", "create some space", "hold that space", "safe space"
-- "sit with that", "sit with your feelings", "let's explore", "let's unpack"
-- "I'm here to listen", "I'm here for you", "I'm here to support you"
-- "How does that make you feel?", "That's completely valid", "That makes sense"
-- Any sentence starting with "Let's see if we can"
-
-EXACTLY how to respond in these situations:
-"What's up?" → "Hey — what's going on with you?"
-"Hey." or "Hi." → "Hey, what's on your mind?"
-"How are you?" → "Doing well — how about you?"
-"I've been doing good." → "Good to hear. Anything been on your mind lately?"
-"Yeah, sure." / "Yeah, okay." / "Sure, why not." → "Cool. How have things been going?"
-"Nothing much." → "Fair enough. Anything on your mind at all?"
-"I've been doing things." → "Yeah? What kind of stuff?"
-"I don't have anything specific." → "That's fine — how've you been sleeping?"
-"I just have some assignments." → "Writing them all out and picking just one to start usually helps — takes the edge off."
-"There's a lot of work." → "What's the most pressing thing right now?"
-"I'm stressed." → "What's been driving most of it?"
-"I feel overwhelmed." → "Try getting everything out of your head and onto paper first — what's actually on the list?"
-"I can't focus." → "Is it more restless, or just blank?"
-"I'm fine." → "Okay, good. Anything you want to talk through?"
-"I don't want to talk about it." → "No worries. Anything else on your mind?"
-"I don't know." → "What would you say if you did know?"
-"What?" or "Huh?" → "Sorry, that came out weird — what's going on with you?"
-"Bye." → "Take care of yourself."
+Good examples:
+Student: "I'm stressed about assignments" → "What's the most pressing one right now?"
+Student: "I can't focus" → "Is it more racing thoughts or just blank?"
+Student: "I've been tired" → "How's the sleep been lately?"
+Student: "I don't know" → "What would you say if you did know?"
+Student: "I'm fine" → "Good — anything on your mind at all?"
+Student: "I feel overwhelmed" → "Getting it all out of your head onto paper first actually helps — want to try that?"
+Student: "I can't fall asleep earlier" → "Try cutting screens 30 min before bed — it shifts the body clock faster than you'd think."
+Student: "That didn't help" → "Fair enough — what's felt closest to useful before?"
+Student: "I've been anxious" → "What's been driving most of it?"
+Student: "I'm behind on everything" → "Pick the one thing that'd make tomorrow feel less heavy and just do that."
+Student: "I've been skipping the gym" → "Even a 10-minute walk counts — sometimes starting smaller than you think helps rebuild the habit."
+Student: "I can't sleep, my mind races" → "Try writing down everything that's on your mind before bed — gets it out of your head."
+Student: "I haven't told anyone" → "Makes sense you'd hold that in. What's the heaviest part of it?"
+Student: "How are you?" → "Doing well — how about you?"
+Student: "Yeah, sure." / "Yeah, okay." → "Cool. How have things been going?"
+Student: "Bye." → "Take care of yourself."
 """
 
 # ---------------------------------------------------------------------------
@@ -161,7 +144,24 @@ _PROJECTION_PATTERNS = re.compile(
 )
 
 
+_BANNED_PHRASE_PATTERNS = re.compile(
+    r"\b(hold(ing)? (that |this |some )?space|sit with (that|this|your feelings?)"
+    r"|I'?m here (to (listen|support|help you)|for you)"
+    r"|let'?s (explore|unpack|sit with|see if we can)"
+    r"|find (a little |some |your )?space"
+    r"|safe space"
+    r"|How does that make you feel\??)\b",
+    re.IGNORECASE,
+)
+
+
 def _clean_response(text: str) -> str:
+    # Strip qwen3-style thinking blocks
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+    # Strip sentences containing hard-banned phrases
+    sentences = re.split(r'(?<=[.!?])\s+', text.strip())
+    sentences = [s for s in sentences if not _BANNED_PHRASE_PATTERNS.search(s)]
+    text = " ".join(sentences).strip() if sentences else ""
     text = text.replace("*", "").replace("#", "")
     text = text.strip().strip('"').strip("'").strip("\u201c").strip("\u201d")
     text = _COACH_PREFIX.sub("", text)
@@ -191,6 +191,8 @@ class Agent:
         self.profile["session_count"] = self.profile.get("session_count", 0) + 1
         self.turn_count = 0
         self.conflict_named_at_turn: int | None = None
+        self._suggested_this_session: list[str] = []  # track technique names used
+        self._grounded_divergences: set[str] = set()  # divergence docs already surfaced
 
     # ------------------------------------------------------------------
     # Greeting
@@ -249,9 +251,11 @@ class Agent:
                         topic=claim.topic,
                     )
 
-        strat = select_strategy(perc, turn_count=self.turn_count)
+        strat = select_strategy(perc, turn_count=self.turn_count, grounded_divergences=self._grounded_divergences)
         retrieved = self._retrieve_memories(user_text, perc, strat)
         response = self._generate_response(user_text, perc, strat, retrieved, visual_emotion)
+        if strat.divergence_context:
+            self._grounded_divergences.add(strat.divergence_context)
 
         # Safety net: catch projection language and replace with neutral fallback
         if _is_projecting(response):
@@ -304,6 +308,8 @@ class Agent:
             "bye", "goodbye", "good bye", "see you", "take care",
             "i'm done", "that's all", "nothing else", "gotta go",
             "i have to go", "talk later", "later", "cya", "farewell",
+            "i'm going to go", "going to go now", "going now", "i'll go",
+            "i need to go", "i have to leave", "heading out",
         ]
         lowered = user_text.lower().strip()
         return any(signal in lowered for signal in closing_signals)
@@ -394,10 +400,14 @@ class Agent:
         if mem_snippets:
             context_parts.append("You remember: " + " | ".join(mem_snippets))
 
-        # Always surface procedural techniques when available, not just on SUGGEST_INTERVENTION
+        # Surface procedural technique — but skip if already suggested this session
         if retrieved.get("procedural"):
-            tech = retrieved["procedural"][0]["document"].split("\n")[0]
-            context_parts.append(f"Relevant technique: {tech}")
+            for proc in retrieved["procedural"]:
+                tech_name = proc["metadata"].get("name", "")
+                if tech_name not in self._suggested_this_session:
+                    tech = proc["document"].split("\n")[0]
+                    context_parts.append(f"Relevant technique: {tech}")
+                    break  # only surface one new technique
 
         if retrieved.get("divergences") and strat.name == GROUND_ON_DIVERGENCE:
             context_parts.append(
@@ -408,11 +418,11 @@ class Agent:
 
         # Token budget — give SUGGEST_INTERVENTION more room to be useful
         token_budget = {
-            ACKNOWLEDGE: 40,
-            SMALL_TALK: 45,
-            SUGGEST_INTERVENTION: 120,
-            GROUND_ON_DIVERGENCE: 55,
-        }.get(strat.name, 55)
+            ACKNOWLEDGE: 640,
+            SMALL_TALK: 645,
+            SUGGEST_INTERVENTION: 720,
+            GROUND_ON_DIVERGENCE: 655,
+        }.get(strat.name, 655)
 
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -464,7 +474,24 @@ class Agent:
                     "Acknowledge it naturally, don't ask what shifted."
                 )
             if self._is_closing(user_text):
-                hints.append("They're leaving. Say bye warmly. One line. No questions.")
+                # Pull recent context so the goodbye can reference what was happening
+                recent = [t.content for t in self.stm.get_history() if t.role == "student"][-3:]
+                hints.append(
+                    f"They're leaving. Say bye warmly in one short sentence. "
+                    f"If there's something specific to wish them well on (exam, sleep, writing), use it. "
+                    f"No questions. Recent student context: {' / '.join(recent)}"
+                )
+            _walkthrough_signals = [
+                "walk me through", "how do i do", "how do you do", "step by step",
+                "show me how", "guide me", "what do i do", "how does it work",
+                "teach me", "explain how",
+            ]
+            if any(s in user_text.lower() for s in _walkthrough_signals):
+                hints.append(
+                    "The student is asking you to guide them through something step by step. "
+                    "Actually do it — give the first concrete step right now. "
+                    "Don't ask what their hurdle is. Don't ask a question. Just start."
+                )
             if self.turn_count <= 2:
                 hints.append("Early in the conversation. Keep it light.")
             if self._student_says_nothing_wrong(user_text):
@@ -500,20 +527,40 @@ class Agent:
 
         messages.append({"role": "user", "content": "\n".join(user_prompt_parts)})
 
+        # Anti-repetition: if last 2 coach responses share the same opener, add a hint
+        recent_coach = [t.content for t in self.stm.get_history() if t.role == "agent"][-3:]
+        if len(recent_coach) >= 2:
+            last2 = recent_coach[-2:]
+            prefixes = [" ".join(r.split()[:4]).lower() for r in last2 if r.split()]
+            if len(prefixes) == 2 and prefixes[0] == prefixes[1]:
+                messages[-1]["content"] += (
+                    f'\n[note] Your last responses all started the same way ("{recent_coach[-1][:40]}…"). '
+                    "Start this response completely differently."
+                )
+
         try:
             resp = ollama.chat(
                 model=config.LLM_MODEL,
                 messages=messages,
+                think=config.USE_THINKING,
                 options={
-                    "temperature": 0.55,
-                    "num_predict": token_budget,
-                    "repeat_penalty": 1.15,
-                    "top_k": 30,
+                    "temperature": 0.4,
+                    "num_predict": token_budget + (3000 if config.USE_THINKING else 0),
+                    "repeat_penalty": 1.25,
+                    "top_k": 25,
                     "top_p": 0.85,
                 },
             )
             text = resp["message"]["content"].strip()
-            return _clean_response(text)
+            cleaned = _clean_response(text)
+            # Track any technique name mentioned in this response
+            if retrieved.get("procedural"):
+                for proc in retrieved["procedural"]:
+                    name = proc["metadata"].get("name", "")
+                    if name and name.lower() in cleaned.lower():
+                        if name not in self._suggested_this_session:
+                            self._suggested_this_session.append(name)
+            return cleaned
         except Exception as e:
             print(f"[agent] LLM error: {e}")
             return random.choice([
@@ -604,11 +651,13 @@ Return JSON with these fields (keep existing values where nothing new was learne
             resp = ollama.chat(
                 model=config.LLM_MODEL,
                 messages=[{"role": "user", "content": prompt}],
+                think=False,
                 options={"temperature": 0.1},
                 format="json",
             )
             import json
-            updates = json.loads(resp["message"]["content"].strip())
+            raw_profile = re.sub(r"<think>.*?</think>", "", resp["message"]["content"], flags=re.DOTALL).strip()
+            updates = json.loads(raw_profile)
             for key in ("name", "background", "stressors", "preferences", "patterns", "notes"):
                 if key in updates and updates[key]:
                     self.profile[key] = updates[key]

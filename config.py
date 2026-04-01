@@ -17,7 +17,8 @@ if hasattr(sys.stderr, "reconfigure"):
 PAM_ENABLED = True
 # ──────────────────────────────────────────────────────────────────────────────
 
-LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")
+LLM_MODEL = os.environ.get("LLM_MODEL", "qwen3:8b")  # best quality in benchmark
+USE_THINKING = os.environ.get("USE_THINKING", "0") == "1"
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 
@@ -53,6 +54,6 @@ TURN_PROJECTION_N = 3
 TURN_PROJECTION_M = 3
 
 PERCEPTION_FAST_WORD_LIMIT = 6
-GROUNDING_MIN_TURNS = 2
+GROUNDING_MIN_TURNS = 4
 GROUNDING_PROBABILITY = 0.6
 USE_LLM_PROJECTION = True
