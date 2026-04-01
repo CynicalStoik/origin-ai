@@ -191,6 +191,7 @@ class Agent:
         self.profile["session_count"] = self.profile.get("session_count", 0) + 1
         self.turn_count = 0
         self.conflict_named_at_turn: int | None = None
+        self._last_response: str = ""
 
     # ------------------------------------------------------------------
     # Greeting
@@ -251,7 +252,7 @@ class Agent:
                     if status != "no_divergence":
                         print(f"  [PAM] divergence '{status}' on: {claim.proposition!r}")
 
-        strat = select_strategy(perc, turn_count=self.turn_count)
+        strat = select_strategy(perc, turn_count=self.turn_count, student_is_fine=self._student_says_nothing_wrong(user_text))
         if config.PAM_ENABLED:
             print(f"  [strategy] {strat.name}"
                   + (f" | div: {strat.divergence_context[:60]!r}" if strat.divergence_context else ""))
@@ -266,6 +267,15 @@ class Agent:
                 "Fair enough. What's been going on lately?",
             ])
 
+        # Don't repeat the exact same response twice in a row
+        if response and response == self._last_response:
+            response = random.choice([
+                "What else is on your mind?",
+                "How are you feeling overall?",
+                "Anything else you want to talk through?",
+            ])
+
+        self._last_response = response
         self._update_memories(user_text, response, perc, visual_emotion)
         return response
 
@@ -412,8 +422,8 @@ class Agent:
         context_block = "\n".join(context_parts)
 
         # Token budget — content tokens wanted + thinking overhead for qwen3
-        # qwen3:8b generates ~600-1600 thinking tokens before content; add 2000 overhead
-        _THINK_OVERHEAD = 2000
+        # qwen3:8b generates ~600-2500 thinking tokens before content; add 3000 overhead
+        _THINK_OVERHEAD = 3000
         token_budget = {
             ACKNOWLEDGE: 40,
             SMALL_TALK: 45,
@@ -513,22 +523,27 @@ class Agent:
 
         messages.append({"role": "user", "content": "\n".join(user_prompt_parts)})
 
-        try:
-            resp = ollama.chat(
-                model=config.LLM_MODEL,
-                messages=messages,
-                options={
-                    "temperature": 0.55,
-                    "num_predict": token_budget,
-                    "repeat_penalty": 1.15,
-                    "top_k": 30,
-                    "top_p": 0.85,
-                },
-            )
-            text = resp["message"]["content"].strip()
-            return _clean_response(text)
-        except Exception as e:
-            print(f"[agent] LLM error: {e}")
+        for attempt in range(2):
+            try:
+                resp = ollama.chat(
+                    model=config.LLM_MODEL,
+                    messages=messages,
+                    options={
+                        "temperature": 0.55,
+                        "num_predict": token_budget + (1000 * attempt),
+                        "repeat_penalty": 1.15,
+                        "top_k": 30,
+                        "top_p": 0.85,
+                    },
+                )
+                text = resp["message"]["content"].strip()
+                if text:
+                    return _clean_response(text)
+                # Empty content — qwen3 thinking ate the budget; retry with more tokens
+                print(f"[agent] Empty response, retrying with more tokens…")
+            except Exception as e:
+                print(f"[agent] LLM error: {e}")
+                break
             return random.choice([
                 "Sorry, lost my train of thought. What were you saying?",
                 "Hmm, say that again?",

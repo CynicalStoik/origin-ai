@@ -65,7 +65,10 @@ def query(
     }
     if where:
         kwargs["where"] = where
-    results = col.query(**kwargs)
+    try:
+        results = col.query(**kwargs)
+    except Exception:
+        return []
     out: list[dict[str, Any]] = []
     for i in range(len(results["ids"][0])):
         out.append(

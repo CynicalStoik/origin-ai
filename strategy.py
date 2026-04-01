@@ -91,6 +91,7 @@ class StrategyResult:
 def select_strategy(
     perception: PerceptionResult,
     turn_count: int = 0,
+    student_is_fine: bool = False,
 ) -> StrategyResult:
     topics = [c.topic for c in perception.claims if c.topic]
     query_topic = " ".join(topics) if topics else ""
@@ -129,14 +130,23 @@ def select_strategy(
                     seen_ids.add(d["id"])
                     divergences.append(d)
 
+    # Filter out the generic wellbeing claim — it fires on almost every turn and
+    # is not specific enough to surface as a meaningful divergence.
+    _GENERIC_PROPS = {"student is doing well emotionally"}
+
+    def _is_specific(d: dict) -> bool:
+        doc = d.get("document", "").lower()
+        return not any(p in doc for p in _GENERIC_PROPS)
+
     contested = [
         d
         for d in divergences
         if d["metadata"].get("negotiation_status") == "contested"
         and d["metadata"].get("confidence", 0) > config.DIVERGENCE_EPSILON
+        and _is_specific(d)
     ]
 
-    if contested and random.random() < config.GROUNDING_PROBABILITY:
+    if contested and not student_is_fine and random.random() < config.GROUNDING_PROBABILITY:
         return StrategyResult(
             name=GROUND_ON_DIVERGENCE,
             instruction=STRATEGY_INSTRUCTIONS[GROUND_ON_DIVERGENCE],
@@ -189,12 +199,14 @@ def select_strategy(
         d
         for d in divergences
         if d["metadata"].get("negotiation_status") == "open"
+        and _is_specific(d)
     ]
     # If on the same topic as a stored belief, surface the gap reliably
     open_prob = 0.85 if perception.is_continuation else 0.4
     if (
         config.PAM_ENABLED
         and open_divs
+        and not student_is_fine
         and turn_count >= config.GROUNDING_MIN_TURNS
         and random.random() < open_prob
     ):
