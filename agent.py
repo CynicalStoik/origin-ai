@@ -241,15 +241,20 @@ class Agent:
         if config.PAM_ENABLED:
             for claim in perc.claims:
                 if claim.proposition and claim.confidence >= 0.5:
-                    perspective.resolve_divergence(
+                    status = perspective.resolve_divergence(
                         new_proposition=claim.proposition,
                         new_holder=claim.holder,
                         new_truth_value=claim.truth_value,
                         new_confidence=claim.confidence,
                         topic=claim.topic,
                     )
+                    if status != "no_divergence":
+                        print(f"  [PAM] divergence '{status}' on: {claim.proposition!r}")
 
         strat = select_strategy(perc, turn_count=self.turn_count)
+        if config.PAM_ENABLED:
+            print(f"  [strategy] {strat.name}"
+                  + (f" | div: {strat.divergence_context[:60]!r}" if strat.divergence_context else ""))
         retrieved = self._retrieve_memories(user_text, perc, strat)
         response = self._generate_response(user_text, perc, strat, retrieved, visual_emotion)
 
@@ -406,13 +411,15 @@ class Agent:
 
         context_block = "\n".join(context_parts)
 
-        # Token budget — give SUGGEST_INTERVENTION more room to be useful
+        # Token budget — content tokens wanted + thinking overhead for qwen3
+        # qwen3:8b generates ~600-1600 thinking tokens before content; add 2000 overhead
+        _THINK_OVERHEAD = 2000
         token_budget = {
             ACKNOWLEDGE: 40,
             SMALL_TALK: 45,
             SUGGEST_INTERVENTION: 120,
             GROUND_ON_DIVERGENCE: 55,
-        }.get(strat.name, 55)
+        }.get(strat.name, 55) + _THINK_OVERHEAD
 
         messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
 
@@ -604,7 +611,7 @@ Return JSON with these fields (keep existing values where nothing new was learne
             resp = ollama.chat(
                 model=config.LLM_MODEL,
                 messages=[{"role": "user", "content": prompt}],
-                options={"temperature": 0.1},
+                options={"temperature": 0.1, "num_predict": 2500},
                 format="json",
             )
             import json

@@ -19,7 +19,9 @@ STRATEGY_INSTRUCTIONS = {
         "You noticed something shifted from what they said before. "
         "Name it once, casually, like you just thought of it. "
         "One line. Don't explain it or make a case. "
-        "Example: 'Earlier you said things were fine — this sounds different.'"
+        "If things got worse: 'Earlier you said sleep was fine — sounds like it's been rough?' "
+        "If things improved: 'Last time you said sleep wasn't great — what changed?' "
+        "If direction unclear: 'You mentioned something different about that earlier — what's going on?'"
     ),
     SUGGEST_INTERVENTION: (
         "They've shared a real problem. Don't just reflect it back — offer something useful. "
@@ -117,8 +119,15 @@ def select_strategy(
         )
 
     divergences: list[dict] = []
-    if config.PAM_ENABLED and query_topic and turn_count >= config.GROUNDING_MIN_TURNS:
-        divergences = psp_mem.recall_active_divergences(query_topic, n=3)
+    if config.PAM_ENABLED and turn_count >= config.GROUNDING_MIN_TURNS:
+        propositions = [c.proposition for c in perception.claims if c.proposition]
+        queries = propositions + ([query_topic] if query_topic else [])
+        seen_ids: set[str] = set()
+        for q in queries:
+            for d in psp_mem.recall_active_divergences(q, n=3):
+                if d["id"] not in seen_ids:
+                    seen_ids.add(d["id"])
+                    divergences.append(d)
 
     contested = [
         d

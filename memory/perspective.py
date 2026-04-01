@@ -106,7 +106,7 @@ def resolve_divergence(
             doc_id=div_id,
             document=(
                 f"Student's view shifted on '{entry['document']}': "
-                f"was {old_stance}, now {new_stance}"
+                f"was {old_stance}, now {new_stance}. topic: {topic}"
             ),
             metadata={
                 "holder": new_holder,

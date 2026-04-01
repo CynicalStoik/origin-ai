@@ -228,13 +228,13 @@ def perceive(
         resp = ollama.chat(
             model=config.LLM_MODEL,
             messages=[{"role": "user", "content": prompt}],
-            options={"temperature": 0.1, "num_predict": 300},
+            options={"temperature": 0.1, "num_predict": 2500},
             format="json",
         )
         raw = resp["message"]["content"].strip()
         data = json.loads(raw)
     except Exception as e:
-        print(f"[perception] LLM parse error: {e}")
+        print(f"[perception] LLM error: {e}")
         return fast_perceive(utterance, context, visual_emotion)
 
     text_emotion = Emotion(
