@@ -1,12 +1,25 @@
 import os
+import sys
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
+# ── Study condition ────────────────────────────────────────────────────────────
+# True  → Condition A: PAM agent (ENGRAM + Perspective Attributed Memory)
+# False → Condition B: baseline agent (ENGRAM only, write-time resolution)
+PAM_ENABLED = True
+# ──────────────────────────────────────────────────────────────────────────────
 
 LLM_MODEL = os.environ.get("LLM_MODEL", "gemma3:4b")
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_HOST", OLLAMA_HOST)
 
-WHISPER_MODEL_SIZE = "tiny.en"
+WHISPER_MODEL_SIZE = "base.en"
 WHISPER_DEVICE = "cpu"
 WHISPER_COMPUTE_TYPE = "int8"
 TTS_VOICE = "en-US-EmmaMultilingualNeural"

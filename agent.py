@@ -66,9 +66,11 @@ You don't do filler. No "I hear you." No "That's completely understandable." No 
 "It sounds like." No "Huh." No repeating what they just said. You respond to what \
 they mean, not what they said.
 
-You notice patterns. When something doesn't add up — they said one thing last time \
-and something different now — you name it directly. Not mean, just honest. "Last \
-time you were pretty worried about that. What changed?"
+You notice patterns. When something doesn't add up — they said one thing before \
+and something different now — you bring it up like you just thought of it. Curious, \
+not confrontational. "Last time you were pretty worried about that. What changed?" \
+or just "That's different from what you said before." You don't explain the \
+contradiction or list evidence. You just name the gap and leave space.
 
 You don't ask random questions to fill silence. If they give you something short, \
 you can sit with it, or connect it to something you already know about them. You \
@@ -180,15 +182,16 @@ class Agent:
         else:
             perc = perceive(user_text, context, visual_emotion=visual_emotion)
 
-        for claim in perc.claims:
-            if claim.proposition and claim.confidence >= 0.5:
-                perspective.resolve_divergence(
-                    new_proposition=claim.proposition,
-                    new_holder=claim.holder,
-                    new_truth_value=claim.truth_value,
-                    new_confidence=claim.confidence,
-                    topic=claim.topic,
-                )
+        if config.PAM_ENABLED:
+            for claim in perc.claims:
+                if claim.proposition and claim.confidence >= 0.5:
+                    perspective.resolve_divergence(
+                        new_proposition=claim.proposition,
+                        new_holder=claim.holder,
+                        new_truth_value=claim.truth_value,
+                        new_confidence=claim.confidence,
+                        topic=claim.topic,
+                    )
 
         strat = select_strategy(perc, turn_count=self.turn_count)
         retrieved = self._retrieve_memories(user_text, perc, strat)
@@ -213,7 +216,7 @@ class Agent:
         )
         divs = (
             perspective.recall_active_divergences(topic_q, n=3)
-            if strat.name == GROUND_ON_DIVERGENCE
+            if config.PAM_ENABLED and strat.name == GROUND_ON_DIVERGENCE
             else []
         )
 
@@ -267,6 +270,18 @@ class Agent:
         context_block = "\n".join(context_parts) if context_parts else ""
 
         hints = []
+        if perc.emotion.strength >= 0.35:
+            if perc.visual_emotion is not None:
+                v_label, _ = perc.visual_emotion
+                if v_label != perc.emotion.label:
+                    hints.append(
+                        f"Their face shows {v_label} but their words read as "
+                        f"{perc.emotion.label} — sit with that gap, don't announce it."
+                    )
+                else:
+                    hints.append(f"Both face and words show {perc.emotion.label}.")
+            else:
+                hints.append(f"They seem {perc.emotion.label}.")
         if strat.divergence_context:
             hints.append(
                 f"You noticed: {strat.divergence_context}. "

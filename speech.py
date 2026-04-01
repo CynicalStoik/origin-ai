@@ -29,6 +29,12 @@ def _get_whisper_model() -> WhisperModel:
     return _whisper_model
 
 
+def preload():
+    """Eagerly load the Whisper model so the first transcription has no load latency."""
+    _get_whisper_model()
+    print("[speech] Whisper model ready.")
+
+
 def _init_pygame():
     global _pygame_inited
     if not _pygame_inited:

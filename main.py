@@ -26,6 +26,7 @@ def main():
 
     if not text_mode:
         import speech
+        speech.preload()
     if vision_enabled:
         import vision
         vision.start()

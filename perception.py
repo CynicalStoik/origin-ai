@@ -26,6 +26,7 @@ class PerceptionResult:
     emotion: Emotion = field(default_factory=Emotion)
     claims: list[Claim] = field(default_factory=list)
     is_continuation: bool = True
+    visual_emotion: tuple[str, float] | None = None
 
 
 # keyword → (emotion_label, strength)
@@ -197,7 +198,10 @@ def fast_perceive(
             topic="wellbeing",
         ))
 
-    return PerceptionResult(emotion=fused, claims=claims, is_continuation=is_cont)
+    return PerceptionResult(
+        emotion=fused, claims=claims, is_continuation=is_cont,
+        visual_emotion=visual_emotion,
+    )
 
 
 def perceive(
@@ -273,4 +277,5 @@ def perceive(
         emotion=fused_emotion,
         claims=claims,
         is_continuation=bool(data.get("is_continuation", True)),
+        visual_emotion=visual_emotion,
     )

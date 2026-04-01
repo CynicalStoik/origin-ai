@@ -34,9 +34,8 @@ def _detection_loop():
     try:
         import cv2
         from deepface import DeepFace
-    except ImportError as e:
-        print(f"[vision] Missing dependency: {e}")
-        print("[vision] Install with: pip install deepface opencv-python")
+    except (ImportError, ValueError, Exception) as e:
+        print(f"[vision] Failed to load dependencies: {e}")
         _camera_ok = False
         _started_event.set()
         _running = False
@@ -89,9 +88,9 @@ def _detection_loop():
         except Exception as e:
             consecutive_errors += 1
             if consecutive_errors <= 2:
-                print(f"[vision] Detection error: {e}")
+                print(f"[vision] Detection error: {str(e).encode('ascii', errors='replace').decode()}")
             if consecutive_errors == 3:
-                print("[vision] Repeated failures — silencing further errors. Vision may be degraded.")
+                print("[vision] Repeated failures - silencing further errors. Vision may be degraded.")
             if consecutive_errors >= 10:
                 print("[vision] Too many errors — disabling vision.")
                 _running = False

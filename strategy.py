@@ -16,9 +16,10 @@ SMALL_TALK = "small_talk"
 
 STRATEGY_INSTRUCTIONS = {
     GROUND_ON_DIVERGENCE: (
-        "Something they said doesn't match what they said before. "
-        "Name it directly but kindly. 'Last time you said X, now it sounds different.' "
-        "Don't dance around it."
+        "You must reference the specific shift you noticed — do not skip it. "
+        "But bring it up like you just thought of it, not like you're making a case. "
+        "Sound curious, not confrontational: 'Earlier you said X — this sounds different.' "
+        "One line. Name the gap, then stop. Don't explain it or list reasons."
     ),
     SUGGEST_INTERVENTION: (
         "Share something practical like it helped you or someone you know. "
@@ -69,7 +70,7 @@ def select_strategy(
         )
 
     divergences: list[dict] = []
-    if query_topic and turn_count >= config.GROUNDING_MIN_TURNS:
+    if config.PAM_ENABLED and query_topic and turn_count >= config.GROUNDING_MIN_TURNS:
         divergences = psp_mem.recall_active_divergences(query_topic, n=3)
 
     contested = [
@@ -113,7 +114,7 @@ def select_strategy(
         for d in divergences
         if d["metadata"].get("negotiation_status") == "open"
     ]
-    if open_divs and turn_count >= config.GROUNDING_MIN_TURNS and random.random() < 0.4:
+    if config.PAM_ENABLED and open_divs and turn_count >= config.GROUNDING_MIN_TURNS and random.random() < 0.4:
         return StrategyResult(
             name=GROUND_ON_DIVERGENCE,
             instruction=STRATEGY_INSTRUCTIONS[GROUND_ON_DIVERGENCE],
