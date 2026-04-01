@@ -38,13 +38,13 @@ STRATEGY_INSTRUCTIONS = {
         "Make a statement or ask one specific thing. Don't wander."
     ),
     ACKNOWLEDGE: (
-        "They gave you something brief. Match their energy. "
-        "A word, a short reaction. Don't push. Don't ask a random question."
+        "They gave you something brief. Match their energy with a short, genuine reaction. "
+        "Do not repeat what they said. Do not ask a random question. One or two words is fine."
     ),
     SMALL_TALK: (
-        "Nothing heavy is on the table. Connect to something you know about them — "
-        "their classes, something they mentioned before. If you don't know anything, "
-        "one genuine question about their life. Don't force it."
+        "Keep it light — nothing heavy has come up yet. Ask one genuine question about "
+        "their life or connect to something they mentioned. Do not repeat what they said. "
+        "Don't force depth."
     ),
 }
 

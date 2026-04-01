@@ -213,22 +213,39 @@ def record_audio(context: list[dict] | None = None) -> np.ndarray:
                         partial_audio = np.concatenate(frames, axis=0).flatten()
                         partial_text = transcribe(partial_audio)
 
-                        if partial_text and _is_turn_complete(partial_text):
-                            print(f"[speech] Turn complete: '{partial_text}'")
-                            recording_done.set()
-                            break
+                        heuristic_complete = bool(
+                            partial_text and _is_turn_complete(partial_text)
+                        )
 
-                        # optional LLM projection for longer speech
-                        if (
+                        if heuristic_complete:
+                            # LLM projection can veto the heuristic for longer
+                            # utterances that look complete but clearly aren't
+                            if (
+                                use_llm
+                                and partial_text
+                                and speech_duration >= min_speech
+                            ):
+                                ratio = _project_turn_completion(partial_text, context)
+                                if ratio < config.TURN_RATIO_THRESHOLD:
+                                    print("[speech] Projection overrode heuristic — continuing")
+                                    checked_this_silence = False
+                                else:
+                                    print(f"[speech] Turn complete: '{partial_text}'")
+                                    recording_done.set()
+                                    break
+                            else:
+                                print(f"[speech] Turn complete: '{partial_text}'")
+                                recording_done.set()
+                                break
+
+                        # projection can also trigger early completion
+                        elif (
                             use_llm
                             and partial_text
                             and speech_duration >= min_speech
                         ):
-                            ratio_threshold = getattr(
-                                config, "TURN_RATIO_THRESHOLD", 0.6
-                            )
                             ratio = _project_turn_completion(partial_text, context)
-                            if ratio >= ratio_threshold:
+                            if ratio >= config.TURN_RATIO_THRESHOLD:
                                 print("[speech] Turn complete (LLM projection)")
                                 recording_done.set()
                                 break
